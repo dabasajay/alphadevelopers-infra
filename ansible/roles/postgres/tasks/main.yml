@@ -102,11 +102,10 @@
 
 # docker_container will not notice a changed bind-mounted config file.
 - name: Restart Postgres when its configuration changed
-  community.docker.docker_container:
-    name: postgres
-    state: started
-    restart: true
+  ansible.builtin.command:
+    cmd: docker restart postgres
   when: pg_config.changed
+  changed_when: true
 
 - name: Wait for Postgres to accept connections
   ansible.builtin.command:

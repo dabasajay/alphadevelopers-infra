@@ -2,6 +2,8 @@ FROM postgres:{{ pg_version }}
 
 # The base image already carries the PGDG apt repo, so this resolves to a
 # pgbackrest new enough to know PostgreSQL {{ pg_version }}. Ubuntu's 2.50 does not.
+# ca-certificates is absent from the base image, and without it pgbackrest
+# cannot verify S3's TLS certificate.
 RUN apt-get update \
- && apt-get install -y --no-install-recommends pgbackrest \
+ && apt-get install -y --no-install-recommends pgbackrest ca-certificates \
  && rm -rf /var/lib/apt/lists/*

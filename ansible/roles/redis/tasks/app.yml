@@ -6,7 +6,9 @@
   ansible.builtin.file:
     path: /etc/alphadevelopers/redis/{{ app.name }}
     state: directory
-    mode: "0700"
+    owner: "999"
+    group: "999"
+    mode: "0750"
 
 - name: "{{ app.name }}: stage the server key material"
   ansible.builtin.copy:
@@ -56,8 +58,7 @@
     command: ["redis-server", "/certs/redis.conf"]
 
 - name: "{{ app.name }}: restart Redis when its configuration changed"
-  community.docker.docker_container:
-    name: "redis-{{ app.name }}"
-    state: started
-    restart: true
+  ansible.builtin.command:
+    cmd: docker restart redis-{{ app.name }}
   when: redis_config.changed
+  changed_when: true

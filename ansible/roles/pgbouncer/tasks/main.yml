@@ -1,16 +1,21 @@
 ---
+# uid 70 is postgres in the alpine-based pgbouncer image.
 - name: Create the pgbouncer config directory
   ansible.builtin.file:
     path: /etc/alphadevelopers/pgbouncer
     state: directory
-    mode: "0700"
+    owner: "70"
+    group: "70"
+    mode: "0750"
 
 - name: Stage the key material for pgbouncer
   ansible.builtin.copy:
     src: "{{ pki_dir }}/{{ item }}"
     dest: /etc/alphadevelopers/pgbouncer/{{ item }}
     remote_src: true
-    mode: "0600"
+    owner: "70"
+    group: "70"
+    mode: "0640"
   loop:
     - server.crt
     - server.key
@@ -34,7 +39,9 @@
 - name: Write the pgbouncer userlist
   ansible.builtin.copy:
     dest: /etc/alphadevelopers/pgbouncer/userlist.txt
-    mode: "0600"
+    owner: "70"
+    group: "70"
+    mode: "0640"
     content: |
       {% for r in scram_verifiers.results %}
       "{{ r.stdout.split(' ')[0] }}" "{{ r.stdout.split(' ')[1] }}"
@@ -46,7 +53,9 @@
   ansible.builtin.template:
     src: pgbouncer.ini.j2
     dest: /etc/alphadevelopers/pgbouncer/pgbouncer.ini
-    mode: "0600"
+    owner: "70"
+    group: "70"
+    mode: "0640"
   register: pgb_config
 
 - name: Run the pgbouncer container
@@ -67,8 +76,7 @@
 # Both files are bind-mounted, so docker_container sees no difference; pgbouncer
 # only rereads them on restart.
 - name: Restart pgbouncer when its configuration changed
-  community.docker.docker_container:
-    name: pgbouncer
-    state: started
-    restart: true
+  ansible.builtin.command:
+    cmd: docker restart pgbouncer
   when: pgb_config.changed or pgb_userlist.changed
+  changed_when: true
