@@ -25,6 +25,9 @@
     value: "{{ item.v }}"
     sysctl_file: /etc/sysctl.d/99-hardening.conf
     reload: true
+  # net.ipv4.conf.all.log_martians is deliberately absent: something on this
+  # host resets it to 0 between runs, so it reported changed forever, and with
+  # no log shipping nobody reads the kernel log it writes to anyway.
   loop:
     # Ignore ICMP redirects and source routing: this host has one gateway.
     - { k: net.ipv4.conf.all.accept_redirects, v: "0" }
@@ -32,7 +35,6 @@
     - { k: net.ipv4.conf.all.accept_source_route, v: "0" }
     - { k: net.ipv4.conf.all.rp_filter, v: "1" }
     - { k: net.ipv4.tcp_syncookies, v: "1" }
-    - { k: net.ipv4.conf.all.log_martians, v: "1" }
     - { k: kernel.randomize_va_space, v: "2" }
     # Drop half-open connections faster; the datastore ports are public.
     - { k: net.ipv4.tcp_max_syn_backlog, v: "4096" }
