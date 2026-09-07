@@ -14,10 +14,6 @@ output "api_function_name" {
   value = module.api.function_name
 }
 
-output "migrate_function_name" {
-  value = module.migrate.function_name
-}
-
 output "spa_bucket" {
   value = module.spa_bucket.id
 }
@@ -28,8 +24,4 @@ output "pdf_bucket" {
 
 output "deploy_role_arn" {
   value = module.deploy_role.arn
-}
-
-output "ssm_prefix" {
-  value = local.ssm_prefix
 }
