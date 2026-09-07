@@ -27,6 +27,8 @@ locals {
   resume_builder = {
     domain      = "easyjd.com"
     github_repo = "alpha-developers-org/resume-builder"
+    # Console-managed group; Terraform only attaches the debug policy to it.
+    developer_group = "easyjd-developers"
   }
 
   # Provider default_tags applies these everywhere. Activate App, Env and Org

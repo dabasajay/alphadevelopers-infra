@@ -30,4 +30,5 @@ module "resume_builder" {
   zone_id           = module.shared.zone_ids[local.resume_builder.domain]
   waf_web_acl_arn   = module.shared.waf_web_acl_arn
   oidc_provider_arn = module.shared.github_oidc_provider_arn
+  developer_group   = local.resume_builder.developer_group
 }

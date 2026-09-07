@@ -22,3 +22,9 @@ variable "waf_web_acl_arn" {
   type    = string
   default = null
 }
+
+variable "developer_group" {
+  description = "Existing IAM group the debug policy attaches to. Null to skip."
+  type        = string
+  default     = null
+}

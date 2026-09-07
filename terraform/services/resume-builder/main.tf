@@ -56,10 +56,9 @@ module "api" {
   memory_mb = 1024
   timeout   = 30
 
-  # The account's total concurrency limit is 10, so any reservation would leave
-  # unreserved below the required minimum of 10. Until that quota is raised the
-  # account limit is itself the cap on the bill and the pgbouncer connections.
-  reserved_concurrency = -1
+  # Caps both the bill and the pgbouncer server connections, which are pooled at
+  # 20 for this app. Excess invocations are throttled, not queued.
+  reserved_concurrency = 20
 
   log_retention_days  = 7
   enable_function_url = true
@@ -152,4 +151,101 @@ module "deploy_role" {
   oidc_provider_arn = var.oidc_provider_arn
   policy_json       = data.aws_iam_policy_document.deploy.json
   tags              = local.tags
+}
+
+# Hand debugging for the people who run this app: its own buckets, its function
+# config and logs, its CDN and image. Deploys stay with the OIDC role above and
+# infrastructure stays with Terraform, so neither is granted here.
+data "aws_iam_policy_document" "developer_debug" {
+  statement {
+    sid = "AppBucketObjects"
+    actions = [
+      "s3:GetObject",
+      "s3:PutObject",
+      "s3:DeleteObject",
+      "s3:GetObjectVersion",
+      "s3:PutObjectTagging",
+      "s3:AbortMultipartUpload",
+    ]
+    resources = ["${module.spa_bucket.arn}/*", "${module.pdf_bucket.arn}/*"]
+  }
+
+  statement {
+    sid       = "AppBucketList"
+    actions   = ["s3:ListBucket", "s3:ListBucketVersions", "s3:GetBucketLocation"]
+    resources = [module.spa_bucket.arn, module.pdf_bucket.arn]
+  }
+
+  # UpdateFunctionCode is absent on purpose: code ships through CI only.
+  statement {
+    sid = "FunctionConfigAndInvoke"
+    actions = [
+      "lambda:GetFunction",
+      "lambda:GetFunctionConfiguration",
+      "lambda:GetFunctionUrlConfig",
+      "lambda:UpdateFunctionConfiguration",
+      "lambda:InvokeFunction",
+      "lambda:ListVersionsByFunction",
+    ]
+    resources = [module.api.function_arn]
+  }
+
+  statement {
+    sid = "FunctionLogs"
+    actions = [
+      "logs:GetLogEvents",
+      "logs:FilterLogEvents",
+      "logs:DescribeLogStreams",
+      "logs:StartQuery",
+      "logs:StopQuery",
+      "logs:GetQueryResults",
+    ]
+    resources = [module.api.log_group_arn, "${module.api.log_group_arn}:*"]
+  }
+
+  # Logs Insights refuses to run without these, and neither accepts a resource.
+  statement {
+    sid       = "LogsInsightsNeedsAccountScope"
+    actions   = ["logs:DescribeQueries", "logs:DescribeLogGroups"]
+    resources = ["*"]
+  }
+
+  statement {
+    sid       = "CdnInvalidation"
+    actions   = ["cloudfront:CreateInvalidation", "cloudfront:GetInvalidation", "cloudfront:ListInvalidations"]
+    resources = [module.cdn.distribution_arn]
+  }
+
+  statement {
+    sid = "PullTheAppImage"
+    actions = [
+      "ecr:BatchGetImage",
+      "ecr:GetDownloadUrlForLayer",
+      "ecr:BatchCheckLayerAvailability",
+      "ecr:DescribeImages",
+    ]
+    resources = [module.ecr.arn]
+  }
+
+  statement {
+    sid       = "EcrLoginIsAccountScoped"
+    actions   = ["ecr:GetAuthorizationToken"]
+    resources = ["*"]
+  }
+}
+
+resource "aws_iam_policy" "developer_debug" {
+  count       = var.developer_group == null ? 0 : 1
+  name        = "easyjd-resume-builder-debug"
+  # Immutable in IAM: editing it forces a replacement of the policy.
+  description = "Debug and experiment on the easyjd.com app: its two buckets, its Lambda config and invocation, its logs, CDN invalidation and image pulls. No infrastructure changes, no Terraform state, no other app."
+  policy      = data.aws_iam_policy_document.developer_debug.json
+  tags        = local.tags
+}
+
+# The group itself is console-managed; only this attachment is Terraform's.
+resource "aws_iam_group_policy_attachment" "developer_debug" {
+  count      = var.developer_group == null ? 0 : 1
+  group      = var.developer_group
+  policy_arn = aws_iam_policy.developer_debug[0].arn
 }

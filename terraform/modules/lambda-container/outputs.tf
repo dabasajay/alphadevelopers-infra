@@ -10,3 +10,7 @@ output "function_url_domain" {
   description = "Host only, for use as a CloudFront origin."
   value       = var.enable_function_url ? replace(replace(aws_lambda_function_url.this[0].function_url, "https://", ""), "/", "") : null
 }
+
+output "log_group_arn" {
+  value = aws_cloudwatch_log_group.this.arn
+}
