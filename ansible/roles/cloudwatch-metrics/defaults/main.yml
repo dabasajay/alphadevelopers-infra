@@ -1,0 +1,4 @@
+---
+cw_namespace: AlphaDevelopers/Datastore
+cw_dir: /etc/alphadevelopers/monitoring
+cw_script: /usr/local/bin/alphadevelopers-metrics

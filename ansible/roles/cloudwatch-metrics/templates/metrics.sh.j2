@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# Pushes the three things nothing else can see from inside AWS. The alarms treat
+# missing data as breaching, so a dead host alerts by falling silent.
+set -euo pipefail
+set -a
+. {{ cw_dir }}/aws.env
+set +a
+
+# 99999 when no backup exists at all, so the alarm fires rather than staying blank.
+age_hours=$(docker exec -u postgres postgres pgbackrest --stanza=main --output=json info \
+  | python3 -c 'import json,sys,time
+d=json.load(sys.stdin)
+b=d[0]["backup"][-1]["timestamp"]["stop"] if d and d[0].get("backup") else 0
+print(round((time.time()-b)/3600, 2) if b else 99999)')
+
+min_days=99999
+for cert in {{ pki_dir }}/clients/*.crt; do
+  [ -e "$cert" ] || continue
+  end=$(openssl x509 -in "$cert" -noout -enddate | cut -d= -f2)
+  days=$(( ( $(date -d "$end" +%s) - $(date +%s) ) / 86400 ))
+  [ "$days" -lt "$min_days" ] && min_days=$days
+done
+
+disk_pct=$(df --output=pcent / | tail -1 | tr -dc '0-9')
+
+aws cloudwatch put-metric-data \
+  --namespace '{{ cw_namespace }}' \
+  --metric-data \
+    "MetricName=BackupAgeHours,Value=${age_hours},Unit=Count,Dimensions=[{Name=Host,Value={{ vm_hostname }}}]" \
+    "MetricName=DaysUntilCertExpiry,Value=${min_days},Unit=Count,Dimensions=[{Name=Host,Value={{ vm_hostname }}}]" \
+    "MetricName=DiskUsedPercent,Value=${disk_pct},Unit=Percent,Dimensions=[{Name=Host,Value={{ vm_hostname }}}]"

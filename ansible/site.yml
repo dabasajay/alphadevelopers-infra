@@ -12,5 +12,7 @@
     - pgbouncer
     - redis
     - pgbackrest
+    # After pgbackrest: it resolves the AWS credentials this role publishes with.
+    - cloudwatch-metrics
     - app-credentials
     - secrets-backup

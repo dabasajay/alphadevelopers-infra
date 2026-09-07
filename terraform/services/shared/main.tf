@@ -62,6 +62,20 @@ data "aws_iam_policy_document" "backup_writer" {
       "${module.backup_bucket.arn}/*",
     ]
   }
+
+  # The host publishes backup age, cert expiry and disk use. PutMetricData takes
+  # no resource, so the namespace condition is the only scoping available.
+  statement {
+    sid       = "PublishHostMetrics"
+    actions   = ["cloudwatch:PutMetricData"]
+    resources = ["*"]
+
+    condition {
+      test     = "StringEquals"
+      variable = "cloudwatch:namespace"
+      values   = [var.metrics_namespace]
+    }
+  }
 }
 
 resource "aws_iam_user" "backup" {
@@ -85,4 +99,76 @@ resource "aws_iam_openid_connect_provider" "github" {
   client_id_list  = ["sts.amazonaws.com"]
   thumbprint_list = ["6938fd4d98bab03faadb97b34396831e3780aea1"]
   tags            = { App = "shared" }
+}
+
+resource "aws_sns_topic" "alerts" {
+  name = "${var.name_prefix}-alerts"
+  tags = { App = "shared" }
+}
+
+# Terraform cannot confirm this; AWS emails a link that has to be clicked once.
+resource "aws_sns_topic_subscription" "alerts_email" {
+  topic_arn = aws_sns_topic.alerts.arn
+  protocol  = "email"
+  endpoint  = var.alert_email
+}
+
+# The host publishes these hourly. Missing data is breaching on all three so a
+# dead or unreachable host alerts by going quiet rather than looking healthy.
+locals {
+  datastore_alarms = {
+    backup-age = {
+      metric      = "BackupAgeHours"
+      threshold   = 26
+      comparison  = "GreaterThanThreshold"
+      description = "No pgBackRest backup completed in the last 26 hours."
+    }
+    cert-expiry = {
+      metric      = "DaysUntilCertExpiry"
+      threshold   = 30
+      comparison  = "LessThanThreshold"
+      description = "A database client certificate expires within 30 days. Renewing it means rewriting the Lambda env."
+    }
+    disk-used = {
+      metric      = "DiskUsedPercent"
+      threshold   = 80
+      comparison  = "GreaterThanThreshold"
+      description = "Root filesystem above 80% on the datastore host."
+    }
+  }
+}
+
+resource "aws_cloudwatch_metric_alarm" "datastore" {
+  for_each = local.datastore_alarms
+
+  alarm_name          = "${var.name_prefix}-${each.key}"
+  alarm_description   = each.value.description
+  namespace           = var.metrics_namespace
+  metric_name         = each.value.metric
+  dimensions          = { Host = var.datastore_host }
+  statistic           = "Maximum"
+  period              = 3600
+  evaluation_periods  = 2
+  threshold           = each.value.threshold
+  comparison_operator = each.value.comparison
+  treat_missing_data  = "breaching"
+
+  alarm_actions = [aws_sns_topic.alerts.arn]
+  ok_actions    = [aws_sns_topic.alerts.arn]
+  tags          = { App = "shared" }
+}
+
+# CloudFront only publishes metrics in us-east-1, and an alarm can only notify a
+# topic in its own region, so the edge alarms need a topic of their own.
+resource "aws_sns_topic" "alerts_edge" {
+  provider = aws.us_east_1
+  name     = "${var.name_prefix}-alerts-edge"
+  tags     = { App = "shared" }
+}
+
+resource "aws_sns_topic_subscription" "alerts_edge_email" {
+  provider  = aws.us_east_1
+  topic_arn = aws_sns_topic.alerts_edge.arn
+  protocol  = "email"
+  endpoint  = var.alert_email
 }

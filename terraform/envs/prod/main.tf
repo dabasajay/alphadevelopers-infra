@@ -12,6 +12,9 @@ module "shared" {
   waf_enabled             = local.waf_enabled
   waf_rate_limit          = local.waf_rate_limit
   waf_enable_common_rules = local.waf_enable_common_rules
+  alert_email             = local.alert_email
+  metrics_namespace       = local.metrics_namespace
+  datastore_host          = local.datastore_host
 }
 
 # Apply only after an initial :latest image is pushed; a container-image Lambda
@@ -31,4 +34,8 @@ module "resume_builder" {
   waf_web_acl_arn   = module.shared.waf_web_acl_arn
   oidc_provider_arn = module.shared.github_oidc_provider_arn
   developer_group   = local.resume_builder.developer_group
+
+  tfstate_bucket_arn    = "arn:aws:s3:::${local.state_bucket}"
+  alerts_topic_arn      = module.shared.alerts_topic_arn
+  alerts_edge_topic_arn = module.shared.alerts_edge_topic_arn
 }

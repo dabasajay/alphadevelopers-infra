@@ -23,3 +23,11 @@ output "backup_secret_access_key" {
 output "github_oidc_provider_arn" {
   value = aws_iam_openid_connect_provider.github.arn
 }
+
+output "alerts_topic_arn" {
+  value = aws_sns_topic.alerts.arn
+}
+
+output "alerts_edge_topic_arn" {
+  value = aws_sns_topic.alerts_edge.arn
+}

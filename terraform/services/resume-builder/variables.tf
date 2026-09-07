@@ -28,3 +28,17 @@ variable "developer_group" {
   type        = string
   default     = null
 }
+
+variable "alerts_topic_arn" {
+  type = string
+}
+
+variable "alerts_edge_topic_arn" {
+  description = "Must be a us-east-1 topic: CloudFront alarms live there."
+  type        = string
+}
+
+variable "tfstate_bucket_arn" {
+  description = "Denied to the developer group: state holds secrets in plaintext."
+  type        = string
+}

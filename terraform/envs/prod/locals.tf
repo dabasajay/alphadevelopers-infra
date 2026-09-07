@@ -9,6 +9,9 @@ locals {
 
   backup_bucket_name = "${local.org}-${local.env}-db-backups"
 
+  # Must match backend.tf. Denied to the developer group; state holds secrets.
+  state_bucket = "${local.org}-tfstate"
+
   # Looked up, not created: these zones hold live NS records.
   route53_zone_names = ["easyjd.com"]
 
@@ -30,6 +33,11 @@ locals {
     # Console-managed group; Terraform only attaches the debug policy to it.
     developer_group = "easyjd-developers"
   }
+
+  # Alarms email here. The subscription needs confirming once from the inbox.
+  alert_email       = "se.dabasajay@gmail.com"
+  metrics_namespace = "AlphaDevelopers/Datastore"
+  datastore_host    = "srv1136595.hstgr.cloud"
 
   # Provider default_tags applies these everywhere. Activate App, Env and Org
   # as cost allocation tags in Billing to get per-app cost breakdowns.

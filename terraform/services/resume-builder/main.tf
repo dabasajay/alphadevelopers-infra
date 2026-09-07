@@ -232,11 +232,27 @@ data "aws_iam_policy_document" "developer_debug" {
     actions   = ["ecr:GetAuthorizationToken"]
     resources = ["*"]
   }
+
+  # The group also carries ReadOnlyAccess, which grants s3:GetObject on every
+  # bucket. Terraform state holds the backup IAM secret in plaintext, and old
+  # versions keep it even after the bucket is re-encrypted, so deny the whole
+  # bucket outright. A Deny beats any Allow, including a future broad one.
+  statement {
+    sid    = "NeverReadTerraformState"
+    effect = "Deny"
+    actions = [
+      "s3:GetObject",
+      "s3:GetObjectVersion",
+      "s3:ListBucket",
+      "s3:ListBucketVersions",
+    ]
+    resources = [var.tfstate_bucket_arn, "${var.tfstate_bucket_arn}/*"]
+  }
 }
 
 resource "aws_iam_policy" "developer_debug" {
-  count       = var.developer_group == null ? 0 : 1
-  name        = "easyjd-resume-builder-debug"
+  count = var.developer_group == null ? 0 : 1
+  name  = "easyjd-resume-builder-debug"
   # Immutable in IAM: editing it forces a replacement of the policy.
   description = "Debug and experiment on the easyjd.com app: its two buckets, its Lambda config and invocation, its logs, CDN invalidation and image pulls. No infrastructure changes, no Terraform state, no other app."
   policy      = data.aws_iam_policy_document.developer_debug.json
@@ -248,4 +264,63 @@ resource "aws_iam_group_policy_attachment" "developer_debug" {
   count      = var.developer_group == null ? 0 : 1
   group      = var.developer_group
   policy_arn = aws_iam_policy.developer_debug[0].arn
+}
+
+resource "aws_cloudwatch_metric_alarm" "api_errors" {
+  alarm_name          = "${local.name}-api-errors"
+  alarm_description   = "The API function is returning errors."
+  namespace           = "AWS/Lambda"
+  metric_name         = "Errors"
+  dimensions          = { FunctionName = module.api.function_name }
+  statistic           = "Sum"
+  period              = 300
+  evaluation_periods  = 1
+  threshold           = 5
+  comparison_operator = "GreaterThanThreshold"
+  # No invocations means no errors, which is genuinely healthy here.
+  treat_missing_data = "notBreaching"
+
+  alarm_actions = [var.alerts_topic_arn]
+  ok_actions    = [var.alerts_topic_arn]
+  tags          = local.tags
+}
+
+# Reserved concurrency is 20, so throttling is now reachable and otherwise silent.
+resource "aws_cloudwatch_metric_alarm" "api_throttles" {
+  alarm_name          = "${local.name}-api-throttles"
+  alarm_description   = "The API function is being throttled against its reserved concurrency."
+  namespace           = "AWS/Lambda"
+  metric_name         = "Throttles"
+  dimensions          = { FunctionName = module.api.function_name }
+  statistic           = "Sum"
+  period              = 300
+  evaluation_periods  = 1
+  threshold           = 0
+  comparison_operator = "GreaterThanThreshold"
+  treat_missing_data  = "notBreaching"
+
+  alarm_actions = [var.alerts_topic_arn]
+  ok_actions    = [var.alerts_topic_arn]
+  tags          = local.tags
+}
+
+# Catches origin and OAC failures that never reach the function, so Lambda's own
+# error metric would stay flat.
+resource "aws_cloudwatch_metric_alarm" "cdn_5xx" {
+  provider            = aws.us_east_1
+  alarm_name          = "${local.name}-cdn-5xx"
+  alarm_description   = "CloudFront is serving 5xx for more than 5% of requests."
+  namespace           = "AWS/CloudFront"
+  metric_name         = "5xxErrorRate"
+  dimensions          = { DistributionId = module.cdn.distribution_id, Region = "Global" }
+  statistic           = "Average"
+  period              = 300
+  evaluation_periods  = 2
+  threshold           = 5
+  comparison_operator = "GreaterThanThreshold"
+  treat_missing_data  = "notBreaching"
+
+  alarm_actions = [var.alerts_edge_topic_arn]
+  ok_actions    = [var.alerts_edge_topic_arn]
+  tags          = local.tags
 }
