@@ -84,8 +84,11 @@
   loop_control:
     label: "{{ item.name }}"
 
-# CN must equal the Postgres role: pgbouncer authenticates the connection
-# against the certificate subject, so a stolen cert cannot become another app.
+# CN is set to the Postgres role for traceability only. pgbouncer's
+# client_tls_sslmode=verify-full requires a valid client certificate but does
+# not tie its CN to the connecting role; that needs auth_type=cert, and this
+# deployment uses scram-sha-256. So the certificate is an outer gate, not an
+# identity binding: a leaked cert plus an app's password is that app.
 - name: Generate per-app client CSRs
   community.crypto.openssl_csr:
     path: "{{ pki_dir }}/clients/{{ item.name }}.csr"

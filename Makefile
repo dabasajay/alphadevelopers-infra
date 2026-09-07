@@ -1,7 +1,7 @@
 ENV ?= prod
 TF  := tofu -chdir=terraform/envs/$(ENV)
 
-.PHONY: help check-profile bootstrap init fmt validate plan apply plan-shared apply-shared output
+.PHONY: help check-profile bootstrap init fmt validate plan apply plan-shared apply-shared output db-console
 
 help:
 	@grep -E '^[a-z-]+:' Makefile | cut -d: -f1 | grep -vE 'help|check-profile'
@@ -41,3 +41,14 @@ apply: check-profile
 
 output: check-profile
 	$(TF) output
+
+# Read-only database console over an IAM-authenticated SSM tunnel. Needs the
+# session-manager-plugin. 8091 rather than 8081, which local pgweb owns in the
+# app repo's docker-compose. Leave it running and open http://localhost:8091.
+db-console: check-profile
+	aws ssm start-session \
+	  --target "$$(aws ssm describe-instance-information \
+	      --query 'InstanceInformationList[0].InstanceId' --output text)" \
+	  --document-name alphadevelopers-prod-resume-builder-db-console \
+	  --parameters '{"localPortNumber":["8091"]}'
+

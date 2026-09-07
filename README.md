@@ -107,6 +107,58 @@ image from that point on and Terraform will not roll it back.
      `InvalidSignatureException`. The SPA does this in `api/client.ts`; a
      bodyless request needs nothing.
 
+## Database access for developers
+
+A read-only web console per app, reached over an IAM-authenticated Session
+Manager tunnel. Nothing is exposed: the console binds `127.0.0.1` on the VM and
+the SSM agent dials out, so no inbound port is opened for any of it.
+
+One-time setup per developer:
+
+```sh
+brew install --cask session-manager-plugin   # or the AWS bundle installer
+```
+
+Then, per session:
+
+```sh
+AWS_PROFILE=alphadevelopers aws ssm start-session \
+  --target "$(aws ssm describe-instance-information \
+      --query 'InstanceInformationList[0].InstanceId' --output text)" \
+  --document-name alphadevelopers-prod-resume-builder-db-console \
+  --parameters '{"localPortNumber":["8091"]}'
+```
+
+Leave it running and open <http://localhost:8091>. `make db-console` does the
+same thing, in this repo and in the app repo. The port is 8091 rather than 8081
+because the app repo's docker-compose publishes local pgweb on 8081, and reading
+production while believing it is local seed data is a mistake worth designing
+out.
+
+What a developer can and cannot do:
+
+- **Read every table** in their app's database, via `pg_read_all_data`.
+- **Not write anything.** The role has `default_transaction_read_only = on`, so
+  Postgres refuses the write itself. pgweb's own `--readonly` is only a keyword
+  check on the query string and a CTE walks straight past it; the server-side
+  setting is the guard that matters.
+- **Not reach any other port.** `portNumber` is a literal in the session
+  document, not a parameter, so it cannot be overridden. AWS's own
+  `AWS-StartPortForwardingSession` does take it as a parameter, which is why
+  that document is explicitly denied.
+- **Not get a shell.** `StartSession` authorises against the document as well as
+  the target, and every interactive document is denied, as is
+  `ssm:SendCommand` — Run Command executes as root.
+- **Not starve the app.** Its own role, `CONNECTION LIMIT 3`, and
+  `statement_timeout = 15s`.
+
+Sessions cost $0.05 each from 30 September 2026 and nothing before that, with no
+duration component — so one tunnel left open all day costs the same as one
+opened for a minute, and reopening it repeatedly is the only way to run the bill
+up. At 3 developers opening it twice a day that is about $6.60/month; opening it
+once and leaving it up halves that. The console itself is a ~30MB container on a
+VM that is already paid for.
+
 ## Notes
 
 - ACM certs and the WAF ACL are in `us-east-1` because CloudFront requires it.
@@ -121,3 +173,16 @@ image from that point on and Terraform will not roll it back.
   Count-only: its `SizeRestrictions_BODY` rule blocks bodies over 8KB and would
   break resume saves.
 - No database or Redis secret passes through Terraform, so none appear in state.
+- The developer group carries `ReadOnlyAccess`, which cannot be narrowed. It
+  grants `s3:Get*` on every bucket and `ssm:Get*` on every parameter, and
+  `GetParameter` transparently decrypts a `SecureString` — together the
+  encrypted backups and the passphrase that opens them. `datastore-guardrails`
+  denies both, plus every SSM route to a shell on the datastore host.
+- `pgbouncer`'s `client_tls_sslmode = verify-full` only requires *a* valid
+  client certificate; it does not tie the certificate CN to the connecting
+  role. That mapping needs `auth_type = cert`, and this deployment uses
+  `scram-sha-256`. The per-app certificate is a strong outer gate, not an
+  identity binding.
+- The datastore host is an SSM managed node, so it is a Run Command target and
+  Run Command runs as root. `ssm:SendCommand` is denied to the developer group
+  for that reason; keep it that way.
