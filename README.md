@@ -93,11 +93,19 @@ image from that point on and Terraform will not roll it back.
    14 days after pgBackRest retires a version.
 4. **Set the GitHub deploy role.** `deploy_role_arn` from the output goes into the
    `resume-builder` repo as the OIDC role for its deploy workflow.
-5. **Smoke-test a POST through CloudFront** before building on it — OAC signing of
-   request bodies against an `AWS_IAM` function URL is the one unverified
-   assumption in this design. If `POST /api/auth/login` returns 403
-   `InvalidSignatureException`, the fallback is `AUTH_NONE` plus a
-   CloudFront-injected secret header validated in middleware.
+5. **OAC on an `AWS_IAM` function URL has two requirements that are easy to
+   miss.** Both are handled, and both fail as a 403 that looks like a
+   misconfigured distribution:
+   - The function needs **two** grants, `lambda:InvokeFunctionUrl` *and*
+     `lambda:InvokeFunction`. Function URLs created after October 2025 refuse
+     the call with `AccessDeniedException` given only the first, even though
+     the signature was accepted. `FunctionUrlAuthType` is rejected on the
+     second action, so they cannot be one resource.
+   - CloudFront signs the request but **does not hash the body**, and Lambda
+     does not accept unsigned payloads. Any request with a body must send
+     `x-amz-content-sha256` itself, or it fails with
+     `InvalidSignatureException`. The SPA does this in `api/client.ts`; a
+     bodyless request needs nothing.
 
 ## Notes
 

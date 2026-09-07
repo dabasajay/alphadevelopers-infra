@@ -192,11 +192,22 @@ resource "aws_s3_bucket_policy" "spa" {
 
 # The function URL is AWS_IAM authorized, so this is the only grant that lets
 # anything invoke it, and only through this distribution.
-resource "aws_lambda_permission" "cloudfront" {
-  statement_id           = "AllowCloudFrontInvoke"
+resource "aws_lambda_permission" "cloudfront_url" {
+  statement_id           = "AllowCloudFrontInvokeFunctionUrl"
   action                 = "lambda:InvokeFunctionUrl"
   function_name          = var.api_function_name
   principal              = "cloudfront.amazonaws.com"
   source_arn             = aws_cloudfront_distribution.this.arn
   function_url_auth_type = "AWS_IAM"
+}
+
+# Function URLs created after October 2025 need this second grant as well. With
+# only InvokeFunctionUrl the signature is accepted and the call is then refused
+# with AccessDeniedException. FunctionUrlAuthType is rejected on this action.
+resource "aws_lambda_permission" "cloudfront_invoke" {
+  statement_id  = "AllowCloudFrontInvokeFunction"
+  action        = "lambda:InvokeFunction"
+  function_name = var.api_function_name
+  principal     = "cloudfront.amazonaws.com"
+  source_arn    = aws_cloudfront_distribution.this.arn
 }

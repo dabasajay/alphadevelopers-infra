@@ -112,8 +112,22 @@ data "aws_iam_policy_document" "deploy" {
   }
 
   statement {
-    sid       = "UpdateFunction"
-    actions   = ["lambda:UpdateFunctionCode", "lambda:GetFunction", "lambda:PublishVersion"]
+    sid = "UpdateFunction"
+    actions = [
+      "lambda:UpdateFunctionCode",
+      "lambda:GetFunction",
+      # Distinct from GetFunction, and what the function-updated waiter polls.
+      "lambda:GetFunctionConfiguration",
+      "lambda:PublishVersion",
+    ]
+    resources = [module.api.function_arn]
+  }
+
+  # Migrations run as a direct invoke of the API function, so no publicly
+  # reachable route can alter the schema.
+  statement {
+    sid       = "RunMigrations"
+    actions   = ["lambda:InvokeFunction"]
     resources = [module.api.function_arn]
   }
 

@@ -6,6 +6,15 @@
     client_keys: "{{ dict(apps | map(attribute='name') | zip(pki_client_keys.results | map(attribute='content') | map('b64decode'))) }}"
   no_log: true
 
+- name: Generate each app's token signing key
+  ansible.builtin.set_fact:
+    jwt_secrets: "{{ jwt_secrets | default({}) | combine({
+        item.name: lookup('password', secrets_out_dir + '/' + item.name + '-jwt-secret.txt length=64 chars=ascii_letters,digits') }) }}"
+  loop: "{{ apps }}"
+  loop_control:
+    label: "{{ item.name }}"
+  no_log: true
+
 - name: Write each app's environment file locally
   ansible.builtin.template:
     src: env.j2

@@ -11,6 +11,9 @@ apps:
     pgbouncer_pool_size: 20
     redis_maxmemory: 256mb
     redis_maxclients: 100
+    # Used only to render the Lambda environment file.
+    domain: easyjd.com
+    pdf_bucket: alphadevelopers-prod-resume-builder-pdfs
 
 pgbouncer_port: 24312
 
