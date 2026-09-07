@@ -37,6 +37,24 @@ resource "aws_cloudfront_function" "spa_rewrite" {
   code = <<-JS
     function handler(event) {
       var request = event.request;
+
+      // One canonical origin. samesite=lax session cookies are host-scoped, so
+      // starting a login on www and landing the callback on the apex would lose
+      // the OAuth state. Never triggers for apps with no www alias.
+      var host = request.headers.host.value;
+      if (host.startsWith('www.')) {
+        var query = Object.keys(request.querystring)
+          .map(function (key) { return key + '=' + request.querystring[key].value; })
+          .join('&');
+        return {
+          statusCode: 301,
+          statusDescription: 'Moved Permanently',
+          headers: {
+            location: { value: 'https://' + host.slice(4) + request.uri + (query ? '?' + query : '') },
+          },
+        };
+      }
+
       var uri = request.uri;
       if (uri.endsWith('/')) {
         request.uri = uri + 'index.html';
