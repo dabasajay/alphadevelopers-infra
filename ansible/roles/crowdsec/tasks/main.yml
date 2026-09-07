@@ -12,6 +12,16 @@
     state: present
     update_cache: true
 
+# The bouncer ships with INPUT only. Traffic to a published container port is
+# DNAT'd and traverses FORWARD, so bans never reached pgbouncer or redis.
+# DOCKER-USER is the chain docker guarantees is consulted before its own rules.
+- name: Have the bouncer filter container traffic too
+  ansible.builtin.replace:
+    path: /etc/crowdsec/bouncers/crowdsec-firewall-bouncer.yaml
+    regexp: '^iptables_chains:\n  - INPUT\n#  - FORWARD\n#  - DOCKER-USER$'
+    replace: "iptables_chains:\n  - INPUT\n  - FORWARD\n  - DOCKER-USER"
+  register: cs_bouncer_chains
+
 - name: Enable CrowdSec
   ansible.builtin.service:
     name: "{{ item }}"
@@ -20,3 +30,9 @@
   loop:
     - crowdsec
     - crowdsec-firewall-bouncer
+
+- name: Restart the bouncer when its chains changed
+  ansible.builtin.service:
+    name: crowdsec-firewall-bouncer
+    state: restarted
+  when: cs_bouncer_chains.changed

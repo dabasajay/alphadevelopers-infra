@@ -22,10 +22,27 @@
     - server.crt
     - server.key
     - server-ca.crt
+    - client-ca.crt
 
-- name: "{{ app.name }}: generate the Redis password"
+# The rendered config on the host is the source of truth. Regenerating would
+# rewrite requirepass and restart redis behind whatever is already connected.
+- name: "{{ app.name }}: read the Redis password already on the host"
+  ansible.builtin.slurp:
+    src: /etc/alphadevelopers/redis/{{ app.name }}/redis.conf
+  register: redis_existing
+  failed_when: false
+  no_log: true
+
+- name: "{{ app.name }}: reuse the existing Redis password"
   ansible.builtin.set_fact:
-    redis_password: "{{ lookup('password', secrets_out_dir + '/' + app.name + '-redis-password.txt length=40 chars=ascii_letters,digits') }}"
+    redis_password: "{{ redis_existing.content | b64decode | regex_search('^requirepass (.+)$', '\\1', multiline=True) | first }}"
+  when: redis_existing.content is defined and 'requirepass' in (redis_existing.content | b64decode)
+  no_log: true
+
+- name: "{{ app.name }}: generate a Redis password on first provision"
+  ansible.builtin.set_fact:
+    redis_password: "{{ lookup('password', '/dev/null length=40 chars=ascii_letters,digits') }}"
+  when: redis_password is not defined
   no_log: true
 
 - name: "{{ app.name }}: record the password for the credentials handoff"
