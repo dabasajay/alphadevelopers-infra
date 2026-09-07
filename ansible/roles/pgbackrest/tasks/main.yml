@@ -9,14 +9,26 @@
   become: false
   run_once: true
   changed_when: false
+  failed_when: false
   register: tf_outputs
+  when: backup_secret_access_key | length == 0
   no_log: true
 
-- name: Set the backup credentials
+- name: Take the backup credentials from the Terraform outputs
   ansible.builtin.set_fact:
     backup_access_key_id: "{{ (tf_outputs.stdout | from_json).backup_iam_access_key_id.value }}"
     backup_secret_access_key: "{{ (tf_outputs.stdout | from_json).backup_iam_secret_access_key.value }}"
+  when:
+    - backup_secret_access_key | length == 0
+    - tf_outputs.rc | default(1) == 0
   no_log: true
+
+- name: Require the backup credentials
+  ansible.builtin.assert:
+    that: backup_secret_access_key | length > 0
+    fail_msg: >-
+      Terraform outputs unreadable and no credentials supplied. Pass them with
+      -e backup_access_key_id=... -e backup_secret_access_key=...
 
 - name: Generate the repository encryption passphrase
   ansible.builtin.set_fact:
@@ -36,16 +48,16 @@
 # container recreation rather than until the next Ansible run.
 - name: Verify pgBackRest is present in the container
   ansible.builtin.command:
-    cmd: docker exec postgres pgbackrest version
+    cmd: docker exec -u postgres postgres pgbackrest version
   register: pgbr_version
   changed_when: false
 
 - name: Create the stanza
   ansible.builtin.command:
-    cmd: docker exec postgres pgbackrest --stanza=main stanza-create
+    cmd: docker exec -u postgres postgres pgbackrest --stanza=main stanza-create
   register: stanza
-  changed_when: "'already exists' not in stanza.stderr"
-  failed_when: stanza.rc != 0 and 'already exists' not in stanza.stderr
+  # pgbackrest reports this on stdout and still exits 0.
+  changed_when: "'already exists' not in stanza.stdout"
 
 - name: Schedule a weekly full and a daily incremental
   ansible.builtin.cron:
@@ -53,7 +65,7 @@
     weekday: "{{ item.weekday }}"
     hour: "2"
     minute: "{{ item.minute }}"
-    job: "docker exec postgres pgbackrest --stanza=main --type={{ item.type }} backup >> /var/log/pgbackrest/cron.log 2>&1"
+    job: "docker exec -u postgres postgres pgbackrest --stanza=main --type={{ item.type }} backup >> /var/log/pgbackrest/cron.log 2>&1"
   loop:
     - { type: full, weekday: "0", minute: "0" }
     - { type: incr, weekday: "1-6", minute: "30" }
@@ -68,7 +80,7 @@
     hour: "9"
     minute: "0"
     job: >-
-      docker exec postgres pgbackrest --stanza=main --output=json info
+      docker exec -u postgres postgres pgbackrest --stanza=main --output=json info
       | python3 -c 'import json,sys,time;
       d=json.load(sys.stdin);
       b=d[0]["backup"][-1]["timestamp"]["stop"] if d and d[0]["backup"] else 0;

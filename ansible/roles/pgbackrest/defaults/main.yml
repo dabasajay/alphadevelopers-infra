@@ -1,0 +1,5 @@
+---
+# Left empty so the role reads them from the Terraform outputs; override with
+# extra-vars when the state is not readable from where Ansible runs.
+backup_access_key_id: ""
+backup_secret_access_key: ""
