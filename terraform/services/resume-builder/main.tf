@@ -53,7 +53,11 @@ module "api" {
   # Rolling tag. CI pushes over it and calls UpdateFunctionCode; Terraform
   # seeds it on create and ignores it after.
   image_uri = "${module.ecr.repository_url}:latest"
-  memory_mb = 1024
+  # Only ~190MB is ever used; this is bought for CPU, which Lambda scales with
+  # memory. Cold start init was averaging 3.7s against 168ms of actual work,
+  # and init is CPU bound. At a few thousand invocations a month the extra
+  # cost is under two cents.
+  memory_mb = 2048
   timeout   = 30
 
   # Caps both the bill and the pgbouncer server connections, which are pooled at
