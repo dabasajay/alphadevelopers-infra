@@ -14,6 +14,9 @@ apps:
     # Used only to render the Lambda environment file.
     domain: easyjd.com
     pdf_bucket: alphadevelopers-prod-resume-builder-pdfs
+    # Read back to recover secrets that exist nowhere else, so out/ stays
+    # disposable and a fresh clone converges without changing anything.
+    lambda_function: alphadevelopers-prod-resume-builder-api
 
 pgbouncer_port: 24312
 
@@ -35,7 +38,14 @@ pki_key_type: ECC
 pki_curve: secp256r1
 pki_dir: /etc/alphadevelopers/pki
 pki_server_ca_days: 1825
-pki_client_cert_days: 365
+# Matched to the CAs on purpose. The client cert lives in the Lambda env, so
+# renewing it means rewriting that env; a yearly expiry would be a yearly
+# outage risk for no real gain. The expiry alarm gives 30 days' notice.
+pki_client_cert_days: 1825
+# Re-signed automatically once it is this close to expiry; the CloudWatch alarm
+# fires at 30 days so you hear about it before that happens.
+pki_client_cert_renew_days: 60
+pki_renew_client_certs: false
 
 aws_profile: alphadevelopers
 backup_bucket: alphadevelopers-prod-db-backups

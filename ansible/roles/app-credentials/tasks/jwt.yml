@@ -1,0 +1,32 @@
+---
+# Rotating this silently invalidates every issued token, so the deployed value
+# wins over generating a new one.
+- name: "{{ app.name }}: read the deployed signing key"
+  ansible.builtin.command:
+    cmd: >-
+      aws lambda get-function-configuration
+      --function-name {{ app.lambda_function }}
+      --region {{ backup_region }}
+      --query Environment.Variables.JWT_SECRET_KEY
+      --output text
+  environment:
+    AWS_PROFILE: "{{ aws_profile }}"
+  delegate_to: localhost
+  become: false
+  register: app_jwt
+  changed_when: false
+  failed_when: false
+  no_log: true
+
+- name: "{{ app.name }}: reuse the deployed signing key"
+  ansible.builtin.set_fact:
+    jwt_secrets: "{{ jwt_secrets | default({}) | combine({app.name: app_jwt.stdout | trim}) }}"
+  when: app_jwt.rc == 0 and (app_jwt.stdout | trim | length) > 0 and app_jwt.stdout | trim != 'None'
+  no_log: true
+
+- name: "{{ app.name }}: generate a signing key on first provision"
+  ansible.builtin.set_fact:
+    jwt_secrets: "{{ jwt_secrets | default({}) | combine({
+        app.name: lookup('password', '/dev/null length=64 chars=ascii_letters,digits') }) }}"
+  when: app.name not in (jwt_secrets | default({}))
+  no_log: true

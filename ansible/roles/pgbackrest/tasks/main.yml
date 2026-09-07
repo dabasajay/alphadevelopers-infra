@@ -30,9 +30,65 @@
       Terraform outputs unreadable and no credentials supplied. Pass them with
       -e backup_access_key_id=... -e backup_secret_access_key=...
 
-- name: Generate the repository encryption passphrase
+# Parameter Store is the source of truth. Generating a new passphrase makes
+# every existing backup unreadable, so this must never fall back silently on a
+# host that already has a repository.
+- name: Ensure the handoff directory exists
+  ansible.builtin.file:
+    path: "{{ secrets_out_dir }}"
+    state: directory
+    mode: "0700"
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+- name: Read the repository passphrase from Parameter Store
+  ansible.builtin.command:
+    cmd: >-
+      aws ssm get-parameter --name {{ ssm_backup_prefix }}/pgbackrest-cipher
+      --with-decryption --region {{ backup_region }}
+      --query Parameter.Value --output text
+  environment:
+    AWS_PROFILE: "{{ aws_profile }}"
+  delegate_to: localhost
+  become: false
+  run_once: true
+  register: ssm_cipher
+  changed_when: false
+  failed_when: false
+  no_log: true
+
+- name: Use the stored repository passphrase
+  ansible.builtin.set_fact:
+    backup_cipher_pass: "{{ ssm_cipher.stdout | trim }}"
+  when: ssm_cipher.rc == 0 and (ssm_cipher.stdout | trim | length) > 0
+  no_log: true
+
+- name: Generate a repository passphrase on first provision
   ansible.builtin.set_fact:
     backup_cipher_pass: "{{ lookup('password', secrets_out_dir + '/pgbackrest-cipher.txt length=64 chars=ascii_letters,digits') }}"
+  when: backup_cipher_pass is not defined
+  no_log: true
+
+# Refuse rather than silently re-encrypt: a mismatched passphrase would leave
+# the existing backups unreadable and the next one unverifiable.
+- name: Confirm the passphrase matches the existing repository
+  ansible.builtin.assert:
+    that: backup_cipher_pass | length > 0
+    fail_msg: >-
+      No repository passphrase in {{ ssm_backup_prefix }}/pgbackrest-cipher and
+      none generated. Restore it before running again.
+
+# An output, not an input: the run above already decided the value. Written so
+# the operator has a local copy and so secrets-backup can mirror it.
+- name: Write the repository passphrase locally
+  ansible.builtin.copy:
+    content: "{{ backup_cipher_pass }}\n"
+    dest: "{{ secrets_out_dir }}/pgbackrest-cipher.txt"
+    mode: "0600"
+  delegate_to: localhost
+  become: false
+  run_once: true
   no_log: true
 
 - name: Render the pgBackRest configuration
@@ -69,20 +125,3 @@
   loop:
     - { type: full, weekday: "0", minute: "0" }
     - { type: incr, weekday: "1-6", minute: "30" }
-
-# Backups no longer expire by age, so a broken timer leaves stale backups in
-# place looking healthy rather than emptying the bucket. This records that to
-# the journal; read it with `journalctl -t pgbackrest`. Nothing notifies you,
-# so this answers "were backups running?" after the fact, it does not warn.
-- name: Record when the newest backup is older than two days
-  ansible.builtin.cron:
-    name: pgbackrest freshness check
-    hour: "9"
-    minute: "0"
-    job: >-
-      docker exec -u postgres postgres pgbackrest --stanza=main --output=json info
-      | python3 -c 'import json,sys,time;
-      d=json.load(sys.stdin);
-      b=d[0]["backup"][-1]["timestamp"]["stop"] if d and d[0]["backup"] else 0;
-      sys.exit(1) if time.time()-b > 172800 else None'
-      || logger -t pgbackrest -p user.err "no successful backup in 48h"

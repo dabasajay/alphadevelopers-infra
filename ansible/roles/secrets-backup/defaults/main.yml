@@ -1,7 +1,8 @@
 ---
-# pgbackrest-cipher is the only copy of the passphrase the S3 backups are
-# encrypted with; without it every backup is unreadable. postgres-superuser is
-# the account that can reset every other password.
+# The passphrase the S3 backups are encrypted with, and the only copy of it:
+# without this every backup is unreadable. The superuser password is not here
+# on purpose. pg_hba grants trust on the local socket and is bind-mounted from
+# /certs rather than living in PGDATA, so ssh plus docker exec is superuser
+# access on a restored host too.
 ssm_backup_files:
   - pgbackrest-cipher.txt
-  - postgres-superuser.txt

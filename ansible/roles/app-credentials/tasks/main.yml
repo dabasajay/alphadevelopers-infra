@@ -6,14 +6,20 @@
     client_keys: "{{ dict(apps | map(attribute='name') | zip(pki_client_keys.results | map(attribute='content') | map('b64decode'))) }}"
   no_log: true
 
-- name: Generate each app's token signing key
-  ansible.builtin.set_fact:
-    jwt_secrets: "{{ jwt_secrets | default({}) | combine({
-        item.name: lookup('password', secrets_out_dir + '/' + item.name + '-jwt-secret.txt length=64 chars=ascii_letters,digits') }) }}"
+- name: Resolve each app's token signing key
+  ansible.builtin.include_tasks: jwt.yml
   loop: "{{ apps }}"
   loop_control:
-    label: "{{ item.name }}"
-  no_log: true
+    loop_var: app
+    label: "{{ app.name }}"
+
+- name: Ensure the handoff directory exists
+  ansible.builtin.file:
+    path: "{{ secrets_out_dir }}"
+    state: directory
+    mode: "0700"
+  delegate_to: localhost
+  become: false
 
 - name: Write each app's environment file locally
   ansible.builtin.template:

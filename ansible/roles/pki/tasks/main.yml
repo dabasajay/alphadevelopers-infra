@@ -98,18 +98,36 @@
   loop_control:
     label: "{{ item.name }}"
 
+# provider ownca ignores timestamps when deciding idempotency, so an expiring
+# certificate is never replaced on its own. Ask whether each one is still valid
+# a renewal window from now, and re-sign the ones that are not.
+- name: Check how much life the client certificates have left
+  community.crypto.x509_certificate_info:
+    path: "{{ pki_dir }}/clients/{{ item.name }}.crt"
+    valid_at:
+      renew_window: "+{{ pki_client_cert_renew_days }}d"
+  loop: "{{ apps }}"
+  loop_control:
+    label: "{{ item.name }}"
+  register: pki_client_life
+  failed_when: false
+
 - name: Sign per-app client certificates
   community.crypto.x509_certificate:
-    path: "{{ pki_dir }}/clients/{{ item.name }}.crt"
-    csr_path: "{{ pki_dir }}/clients/{{ item.name }}.csr"
+    path: "{{ pki_dir }}/clients/{{ item.0.name }}.crt"
+    csr_path: "{{ pki_dir }}/clients/{{ item.0.name }}.csr"
     provider: ownca
     ownca_path: "{{ pki_dir }}/client-ca.crt"
     ownca_privatekey_path: "{{ pki_dir }}/client-ca.key"
     ownca_not_after: "+{{ pki_client_cert_days }}d"
     mode: "0644"
-  loop: "{{ apps }}"
+    # Re-signing changes DB_CLIENT_CERT, and pushing that to the Lambda env is a
+    # manual step, so this only stops a certificate lapsing unnoticed. Pass
+    # -e pki_renew_client_certs=true to re-sign deliberately.
+    force: "{{ pki_renew_client_certs | bool or not (item.1.valid_at.renew_window | default(true)) }}"
+  loop: "{{ apps | zip(pki_client_life.results) | list }}"
   loop_control:
-    label: "{{ item.name }}"
+    label: "{{ item.0.name }}"
 
 - name: Read the server CA
   ansible.builtin.slurp:
