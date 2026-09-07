@@ -63,9 +63,28 @@
     pull: true
     rebuild: "{{ 'always' if pg_dockerfile.changed else 'never' }}"
 
-- name: Generate the superuser password
+# The running container is the source of truth. Regenerating this would change
+# the container spec and force a needless recreate; the value itself is never
+# needed by a human, since pg_hba trusts the local socket.
+- name: Read the superuser password off the running container
+  ansible.builtin.command:
+    cmd: docker inspect -f '{{ "{{range .Config.Env}}{{println .}}{{end}}" }}' postgres
+  register: pg_container_env
+  changed_when: false
+  failed_when: false
+  no_log: true
+
+- name: Reuse the superuser password the container already has
   ansible.builtin.set_fact:
-    pg_superuser_password: "{{ lookup('password', secrets_out_dir + '/postgres-superuser.txt length=40 chars=ascii_letters,digits') }}"
+    pg_superuser_password: "{{ pg_container_env.stdout | regex_search('POSTGRES_PASSWORD=(.+)', '\\1') | first }}"
+  when: pg_container_env.rc == 0 and 'POSTGRES_PASSWORD=' in pg_container_env.stdout
+  no_log: true
+
+# Only reached on a host with no postgres container, i.e. first provision.
+- name: Generate a superuser password for a new cluster
+  ansible.builtin.set_fact:
+    pg_superuser_password: "{{ lookup('password', '/dev/null length=40 chars=ascii_letters,digits') }}"
+  when: pg_superuser_password is not defined
   no_log: true
 
 # No published ports: reachable only from this bridge, or by docker exec.
@@ -116,14 +135,31 @@
   delay: 5
   changed_when: false
 
-- name: Generate each app's database password
-  ansible.builtin.set_fact:
-    app_passwords: "{{ app_passwords | default({}) | combine({
-        item.name: lookup('password', secrets_out_dir + '/' + item.name + '-db-password.txt length=40 chars=ascii_letters,digits') }) }}"
+# pgbackrest holds its control connection idle from pg_backup_start until every
+# file is copied, so any idle_session_timeout aborts the backup. Exempt the role
+# it connects as rather than weakening the setting for the app roles.
+- name: Read the superuser role settings
+  ansible.builtin.command:
+    cmd: >-
+      docker exec postgres psql -U postgres -tAc
+      "SELECT coalesce(array_to_string(rolconfig, ','), '') FROM pg_roles WHERE rolname = 'postgres'"
+  register: pg_superuser_config
+  changed_when: false
+
+- name: Exempt the superuser from the idle session timeout
+  ansible.builtin.command:
+    cmd: >-
+      docker exec postgres psql -U postgres -tAc
+      "ALTER ROLE postgres SET idle_session_timeout = 0"
+  when: "'idle_session_timeout=0' not in pg_superuser_config.stdout"
+  changed_when: true
+
+- name: Resolve each app's database password
+  ansible.builtin.include_tasks: password.yml
   loop: "{{ apps }}"
   loop_control:
-    label: "{{ item.name }}"
-  no_log: true
+    loop_var: app
+    label: "{{ app.name }}"
 
 - name: Provision each app's role and database
   ansible.builtin.include_tasks: app.yml

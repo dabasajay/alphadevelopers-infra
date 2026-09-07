@@ -26,9 +26,11 @@ ssl_min_protocol_version = 'TLSv1.2'
 tcp_keepalives_idle = 60
 tcp_keepalives_interval = 30
 tcp_keepalives_count = 4
-idle_session_timeout = 600
-idle_in_transaction_session_timeout = 60000
-statement_timeout = 30000
+# Units are mandatory here: these GUCs default to ms, so a bare 600 means
+# 0.6s and reaps every pooled connection between transactions.
+idle_session_timeout = 600s
+idle_in_transaction_session_timeout = 60s
+statement_timeout = 30s
 
 wal_level = replica
 archive_mode = on
