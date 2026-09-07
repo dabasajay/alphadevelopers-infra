@@ -56,8 +56,10 @@ module "api" {
   memory_mb = 1024
   timeout   = 30
 
-  # Bounds both the bill and the pgbouncer connection count.
-  reserved_concurrency = 20
+  # The account's total concurrency limit is 10, so any reservation would leave
+  # unreserved below the required minimum of 10. Until that quota is raised the
+  # account limit is itself the cap on the bill and the pgbouncer connections.
+  reserved_concurrency = -1
 
   log_retention_days  = 7
   enable_function_url = true
