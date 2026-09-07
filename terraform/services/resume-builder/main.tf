@@ -289,25 +289,6 @@ resource "aws_cloudwatch_metric_alarm" "api_errors" {
   tags          = local.tags
 }
 
-# Reserved concurrency is 20, so throttling is now reachable and otherwise silent.
-resource "aws_cloudwatch_metric_alarm" "api_throttles" {
-  alarm_name          = "${local.name}-api-throttles"
-  alarm_description   = "The API function is being throttled against its reserved concurrency."
-  namespace           = "AWS/Lambda"
-  metric_name         = "Throttles"
-  dimensions          = { FunctionName = module.api.function_name }
-  statistic           = "Sum"
-  period              = 300
-  evaluation_periods  = 1
-  threshold           = 0
-  comparison_operator = "GreaterThanThreshold"
-  treat_missing_data  = "notBreaching"
-
-  alarm_actions = [var.alerts_topic_arn]
-  ok_actions    = [var.alerts_topic_arn]
-  tags          = local.tags
-}
-
 # Catches origin and OAC failures that never reach the function, so Lambda's own
 # error metric would stay flat.
 resource "aws_cloudwatch_metric_alarm" "cdn_5xx" {
