@@ -1,0 +1,7 @@
+---
+# pgbackrest-cipher is the only copy of the passphrase the S3 backups are
+# encrypted with; without it every backup is unreadable. postgres-superuser is
+# the account that can reset every other password.
+ssm_backup_files:
+  - pgbackrest-cipher.txt
+  - postgres-superuser.txt

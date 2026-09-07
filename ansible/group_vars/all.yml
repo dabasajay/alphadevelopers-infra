@@ -42,5 +42,8 @@ backup_bucket: alphadevelopers-prod-db-backups
 backup_region: ap-south-1
 backup_retention_full: 3
 
+# Mirrored to Parameter Store so this machine is not the only copy.
+ssm_backup_prefix: /alphadevelopers/prod/ansible
+
 # Written locally for you to paste into the Lambda console; never committed.
 secrets_out_dir: "{{ playbook_dir }}/out"
