@@ -1,0 +1,26 @@
+---
+# Docker is preinstalled on this image; this only fixes the daemon defaults.
+- name: Configure the Docker daemon
+  ansible.builtin.copy:
+    dest: /etc/docker/daemon.json
+    mode: "0644"
+    content: |
+      {
+        "log-driver": "json-file",
+        "log-opts": {"max-size": "10m", "max-file": "3"},
+        "live-restore": true,
+        "userland-proxy": false,
+        "no-new-privileges": true
+      }
+  register: docker_daemon
+
+- name: Restart Docker when the daemon config changed
+  ansible.builtin.service:
+    name: docker
+    state: restarted
+  when: docker_daemon.changed
+
+- name: Create the shared datastore network
+  community.docker.docker_network:
+    name: alphadevelopers
+    driver: bridge

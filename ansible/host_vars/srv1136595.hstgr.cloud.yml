@@ -1,0 +1,24 @@
+---
+# Measured on the host: 4 vCPU, 15992 MB RAM, non-rotational storage.
+vm_cpus: 4
+vm_memory_mb: 15992
+
+# 25% of RAM, the standard starting point.
+pg_shared_buffers: 4GB
+# Total memory the planner may assume is cached, including the page cache.
+pg_effective_cache_size: 12GB
+pg_maintenance_work_mem: 1GB
+pg_work_mem: 16MB
+
+# pgbouncer caps real concurrency far below this; 300 backends on 4 cores would
+# thrash, and each backend can reserve work_mem more than once.
+pg_max_connections: 200
+
+# Non-rotational storage: seeks are nearly free and deep queues are useful.
+pg_random_page_cost: 1.1
+pg_effective_io_concurrency: 200
+
+pg_max_worker_processes: 4
+pg_max_parallel_workers: 4
+pg_max_parallel_workers_per_gather: 2
+pg_max_parallel_maintenance_workers: 2

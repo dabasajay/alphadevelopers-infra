@@ -1,0 +1,66 @@
+---
+- name: "{{ app.name }}: check whether the role exists"
+  ansible.builtin.command:
+    cmd: docker exec postgres psql -U postgres -tAc "SELECT 1 FROM pg_roles WHERE rolname = '{{ app.pg_role }}'"
+  register: role_exists
+  changed_when: false
+
+# Created once. Re-running ALTER ROLE ... PASSWORD would mint a fresh scram
+# verifier on every run, churning pgbouncer's userlist for no reason.
+- name: "{{ app.name }}: create the role"
+  ansible.builtin.command:
+    cmd: >-
+      docker exec postgres psql -U postgres -v ON_ERROR_STOP=1 -c
+      "CREATE ROLE {{ app.pg_role }} LOGIN PASSWORD '{{ app_passwords[app.name] }}'
+       CONNECTION LIMIT {{ app.pg_connection_limit }}"
+  when: role_exists.stdout != "1"
+  no_log: true
+
+# Opt in with -e pg_rotate_passwords=true after replacing the file in out/.
+- name: "{{ app.name }}: rotate the password"
+  ansible.builtin.command:
+    cmd: >-
+      docker exec postgres psql -U postgres -v ON_ERROR_STOP=1 -c
+      "ALTER ROLE {{ app.pg_role }} PASSWORD '{{ app_passwords[app.name] }}'"
+  when: pg_rotate_passwords | bool
+  no_log: true
+
+- name: "{{ app.name }}: read the current connection limit"
+  ansible.builtin.command:
+    cmd: docker exec postgres psql -U postgres -tAc "SELECT rolconnlimit FROM pg_roles WHERE rolname = '{{ app.pg_role }}'"
+  register: current_limit
+  changed_when: false
+
+- name: "{{ app.name }}: correct the connection limit"
+  ansible.builtin.command:
+    cmd: >-
+      docker exec postgres psql -U postgres -v ON_ERROR_STOP=1 -c
+      "ALTER ROLE {{ app.pg_role }} CONNECTION LIMIT {{ app.pg_connection_limit }}"
+  when: current_limit.stdout | int != app.pg_connection_limit | int
+
+- name: "{{ app.name }}: check whether the database exists"
+  ansible.builtin.command:
+    cmd: docker exec postgres psql -U postgres -tAc "SELECT 1 FROM pg_database WHERE datname = '{{ app.pg_database }}'"
+  register: db_exists
+  changed_when: false
+
+- name: "{{ app.name }}: create the database"
+  ansible.builtin.command:
+    cmd: >-
+      docker exec postgres psql -U postgres -v ON_ERROR_STOP=1 -c
+      "CREATE DATABASE {{ app.pg_database }} OWNER {{ app.pg_role }}"
+  when: db_exists.stdout != "1"
+
+# Re-asserted every run so a manual grant cannot quietly widen access. The SQL
+# is idempotent, so this reports no change once the state is correct.
+- name: "{{ app.name }}: restrict the database to its own role"
+  ansible.builtin.command:
+    cmd: >-
+      docker exec postgres psql -U postgres -v ON_ERROR_STOP=1 -d {{ app.pg_database }} -c
+      "REVOKE CONNECT ON DATABASE {{ app.pg_database }} FROM PUBLIC;
+       GRANT CONNECT ON DATABASE {{ app.pg_database }} TO {{ app.pg_role }};
+       REVOKE ALL ON SCHEMA public FROM PUBLIC;
+       GRANT ALL ON SCHEMA public TO {{ app.pg_role }};
+       ALTER DATABASE {{ app.pg_database }} CONNECTION LIMIT {{ app.pg_connection_limit }};
+       ALTER ROLE {{ app.pg_role }} IN DATABASE {{ app.pg_database }} SET statement_timeout = '30s';"
+  changed_when: false

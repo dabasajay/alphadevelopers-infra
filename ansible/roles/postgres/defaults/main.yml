@@ -1,0 +1,3 @@
+---
+# Passwords are created once and reused from out/. Set true only to rotate.
+pg_rotate_passwords: false

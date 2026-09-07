@@ -1,0 +1,45 @@
+[databases]
+{% for app in apps %}
+{{ app.pg_database }} = host=postgres port=5432 dbname={{ app.pg_database }} pool_size={{ app.pgbouncer_pool_size }}
+{% endfor %}
+
+[pgbouncer]
+listen_addr = 0.0.0.0
+listen_port = {{ pgbouncer_port }}
+auth_type = scram-sha-256
+auth_file = /etc/pgbouncer/userlist.txt
+
+# Transaction pooling: a Lambda holds a server connection only for the length
+# of a transaction, so a few backends serve many concurrent invocations.
+pool_mode = transaction
+max_client_conn = 500
+default_pool_size = 20
+min_pool_size = 0
+reserve_pool_size = 5
+reserve_pool_timeout = 3
+
+# mTLS. A client without a certificate signed by the client CA is rejected
+# during the handshake, before it can send a single protocol byte.
+client_tls_sslmode = verify-full
+client_tls_ca_file = /certs/client-ca.crt
+client_tls_cert_file = /certs/server.crt
+client_tls_key_file = /certs/server.key
+client_tls_protocols = secure
+
+# Postgres publishes no host port, but this leg is still verified.
+server_tls_sslmode = verify-full
+server_tls_ca_file = /certs/server-ca.crt
+
+# Drop connections abandoned by frozen or reaped Lambda containers.
+client_idle_timeout = 600
+client_login_timeout = 15
+server_idle_timeout = 300
+server_lifetime = 1800
+tcp_keepalive = 1
+tcp_keepidle = 60
+tcp_keepintvl = 30
+tcp_keepcnt = 4
+
+ignore_startup_parameters = extra_float_digits,options
+log_connections = 1
+log_disconnections = 1

@@ -1,0 +1,7 @@
+---
+- name: Provision each app's Redis
+  ansible.builtin.include_tasks: app.yml
+  loop: "{{ apps }}"
+  loop_control:
+    loop_var: app
+    label: "{{ app.name }}:{{ app.redis_port }}"

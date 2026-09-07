@@ -1,0 +1,74 @@
+---
+- name: Create the pgbouncer config directory
+  ansible.builtin.file:
+    path: /etc/alphadevelopers/pgbouncer
+    state: directory
+    mode: "0700"
+
+- name: Stage the key material for pgbouncer
+  ansible.builtin.copy:
+    src: "{{ pki_dir }}/{{ item }}"
+    dest: /etc/alphadevelopers/pgbouncer/{{ item }}
+    remote_src: true
+    mode: "0600"
+  loop:
+    - server.crt
+    - server.key
+    - server-ca.crt
+    - client-ca.crt
+
+- name: Read each role's scram verifier from Postgres
+  ansible.builtin.command:
+    cmd: >-
+      docker exec postgres psql -U postgres -tAc
+      "SELECT rolname || ' ' || rolpassword FROM pg_authid WHERE rolname = '{{ item.pg_role }}'"
+  register: scram_verifiers
+  changed_when: false
+  loop: "{{ apps }}"
+  loop_control:
+    label: "{{ item.name }}"
+  no_log: true
+
+# The stored scram verifier, not the password: pgbouncer can authenticate
+# clients without the plaintext ever being written to disk here.
+- name: Write the pgbouncer userlist
+  ansible.builtin.copy:
+    dest: /etc/alphadevelopers/pgbouncer/userlist.txt
+    mode: "0600"
+    content: |
+      {% for r in scram_verifiers.results %}
+      "{{ r.stdout.split(' ')[0] }}" "{{ r.stdout.split(' ')[1] }}"
+      {% endfor %}
+  register: pgb_userlist
+  no_log: true
+
+- name: Render the pgbouncer configuration
+  ansible.builtin.template:
+    src: pgbouncer.ini.j2
+    dest: /etc/alphadevelopers/pgbouncer/pgbouncer.ini
+    mode: "0600"
+  register: pgb_config
+
+- name: Run the pgbouncer container
+  community.docker.docker_container:
+    name: pgbouncer
+    image: "{{ pgbouncer_image }}"
+    state: started
+    restart_policy: unless-stopped
+    networks:
+      - name: alphadevelopers
+    ports:
+      - "{{ pgbouncer_port }}:{{ pgbouncer_port }}"
+    volumes:
+      - /etc/alphadevelopers/pgbouncer/pgbouncer.ini:/etc/pgbouncer/pgbouncer.ini:ro
+      - /etc/alphadevelopers/pgbouncer/userlist.txt:/etc/pgbouncer/userlist.txt:ro
+      - /etc/alphadevelopers/pgbouncer:/certs:ro
+
+# Both files are bind-mounted, so docker_container sees no difference; pgbouncer
+# only rereads them on restart.
+- name: Restart pgbouncer when its configuration changed
+  community.docker.docker_container:
+    name: pgbouncer
+    state: started
+    restart: true
+  when: pgb_config.changed or pgb_userlist.changed

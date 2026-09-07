@@ -1,0 +1,11 @@
+# Unix socket only, for `docker exec` administration after SSH.
+local   all             all                                     trust
+
+# The container network. Postgres publishes no host port, so nothing outside
+# this bridge can reach it; TLS and scram still apply.
+hostssl all             all             10.0.0.0/8              scram-sha-256
+hostssl all             all             172.16.0.0/12           scram-sha-256
+hostssl all             all             192.168.0.0/16          scram-sha-256
+
+# Anything else is refused.
+host    all             all             all                     reject

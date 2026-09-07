@@ -1,0 +1,76 @@
+---
+# Read straight from the Terraform state so the key is never copied by hand.
+- name: Read the backup credentials from the Terraform outputs
+  ansible.builtin.command:
+    cmd: tofu -chdir={{ playbook_dir }}/../terraform/envs/prod output -json
+  environment:
+    AWS_PROFILE: "{{ aws_profile }}"
+  delegate_to: localhost
+  become: false
+  run_once: true
+  changed_when: false
+  register: tf_outputs
+  no_log: true
+
+- name: Set the backup credentials
+  ansible.builtin.set_fact:
+    backup_access_key_id: "{{ (tf_outputs.stdout | from_json).backup_iam_access_key_id.value }}"
+    backup_secret_access_key: "{{ (tf_outputs.stdout | from_json).backup_iam_secret_access_key.value }}"
+  no_log: true
+
+- name: Generate the repository encryption passphrase
+  ansible.builtin.set_fact:
+    backup_cipher_pass: "{{ lookup('password', secrets_out_dir + '/pgbackrest-cipher.txt length=64 chars=ascii_letters,digits') }}"
+  no_log: true
+
+- name: Render the pgBackRest configuration
+  ansible.builtin.template:
+    src: pgbackrest.conf.j2
+    dest: /etc/alphadevelopers/pgbackrest/pgbackrest.conf
+    owner: "999"
+    group: "999"
+    mode: "0640"
+  no_log: true
+
+# pgBackRest is baked into the image, so archive_command keeps working across
+# container recreation rather than until the next Ansible run.
+- name: Verify pgBackRest is present in the container
+  ansible.builtin.command:
+    cmd: docker exec postgres pgbackrest version
+  register: pgbr_version
+  changed_when: false
+
+- name: Create the stanza
+  ansible.builtin.command:
+    cmd: docker exec postgres pgbackrest --stanza=main stanza-create
+  register: stanza
+  changed_when: "'already exists' not in stanza.stderr"
+  failed_when: stanza.rc != 0 and 'already exists' not in stanza.stderr
+
+- name: Schedule a weekly full and a daily incremental
+  ansible.builtin.cron:
+    name: "pgbackrest {{ item.type }}"
+    weekday: "{{ item.weekday }}"
+    hour: "2"
+    minute: "{{ item.minute }}"
+    job: "docker exec postgres pgbackrest --stanza=main --type={{ item.type }} backup >> /var/log/pgbackrest/cron.log 2>&1"
+  loop:
+    - { type: full, weekday: "0", minute: "0" }
+    - { type: incr, weekday: "1-6", minute: "30" }
+
+# Backups no longer expire by age, so a broken timer leaves stale backups in
+# place looking healthy rather than emptying the bucket. This records that to
+# the journal; read it with `journalctl -t pgbackrest`. Nothing notifies you,
+# so this answers "were backups running?" after the fact, it does not warn.
+- name: Record when the newest backup is older than two days
+  ansible.builtin.cron:
+    name: pgbackrest freshness check
+    hour: "9"
+    minute: "0"
+    job: >-
+      docker exec postgres pgbackrest --stanza=main --output=json info
+      | python3 -c 'import json,sys,time;
+      d=json.load(sys.stdin);
+      b=d[0]["backup"][-1]["timestamp"]["stop"] if d and d[0]["backup"] else 0;
+      sys.exit(1) if time.time()-b > 172800 else None'
+      || logger -t pgbackrest -p user.err "no successful backup in 48h"

@@ -16,6 +16,7 @@ override.tf.json
 !*.tfvars.example
 
 # Ansible
+ansible/out/
 *.retry
 .vault_pass
 ansible/vault-password
@@ -27,3 +28,5 @@ ansible/vault-password
 *.csr
 
 .DS_Store
+
+ssh-keys

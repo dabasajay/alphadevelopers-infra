@@ -1,0 +1,7 @@
+FROM postgres:{{ pg_version }}
+
+# The base image already carries the PGDG apt repo, so this resolves to a
+# pgbackrest new enough to know PostgreSQL {{ pg_version }}. Ubuntu's 2.50 does not.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends pgbackrest \
+ && rm -rf /var/lib/apt/lists/*

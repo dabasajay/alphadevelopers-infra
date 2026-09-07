@@ -1,0 +1,32 @@
+---
+- name: Collect the PEM material
+  ansible.builtin.set_fact:
+    server_ca_pem: "{{ pki_server_ca.content | b64decode }}"
+    client_certs: "{{ dict(apps | map(attribute='name') | zip(pki_client_certs.results | map(attribute='content') | map('b64decode'))) }}"
+    client_keys: "{{ dict(apps | map(attribute='name') | zip(pki_client_keys.results | map(attribute='content') | map('b64decode'))) }}"
+  no_log: true
+
+- name: Write each app's environment file locally
+  ansible.builtin.template:
+    src: env.j2
+    dest: "{{ secrets_out_dir }}/{{ app.name }}.env"
+    mode: "0600"
+  delegate_to: localhost
+  become: false
+  loop: "{{ apps }}"
+  loop_control:
+    loop_var: app
+    label: "{{ app.name }}"
+  no_log: true
+
+- name: Report the environment variable budget
+  ansible.builtin.debug:
+    msg: >-
+      {{ app.name }}: {{ lookup('file', secrets_out_dir + '/' + app.name + '.env')
+      | regex_findall('^[A-Z_]+=', multiline=True) | length }} variables,
+      {{ (lookup('file', secrets_out_dir + '/' + app.name + '.env') | length / 1024) | round(2) }}KB
+      of Lambda's 4KB budget
+  loop: "{{ apps }}"
+  loop_control:
+    loop_var: app
+    label: "{{ app.name }}"

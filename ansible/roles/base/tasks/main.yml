@@ -1,0 +1,85 @@
+---
+- name: Install base packages
+  ansible.builtin.apt:
+    name:
+      - ufw
+      - unattended-upgrades
+      - chrony
+      - python3-docker
+      - acl
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Enable unattended security upgrades
+  ansible.builtin.copy:
+    dest: /etc/apt/apt.conf.d/20auto-upgrades
+    mode: "0644"
+    content: |
+      APT::Periodic::Update-Package-Lists "1";
+      APT::Periodic::Unattended-Upgrade "1";
+
+- name: Apply kernel hardening
+  ansible.posix.sysctl:
+    name: "{{ item.k }}"
+    value: "{{ item.v }}"
+    sysctl_file: /etc/sysctl.d/99-hardening.conf
+    reload: true
+  loop:
+    # Ignore ICMP redirects and source routing: this host has one gateway.
+    - { k: net.ipv4.conf.all.accept_redirects, v: "0" }
+    - { k: net.ipv4.conf.all.send_redirects, v: "0" }
+    - { k: net.ipv4.conf.all.accept_source_route, v: "0" }
+    - { k: net.ipv4.conf.all.rp_filter, v: "1" }
+    - { k: net.ipv4.tcp_syncookies, v: "1" }
+    - { k: net.ipv4.conf.all.log_martians, v: "1" }
+    - { k: kernel.randomize_va_space, v: "2" }
+    # Drop half-open connections faster; the datastore ports are public.
+    - { k: net.ipv4.tcp_max_syn_backlog, v: "4096" }
+    - { k: net.ipv4.tcp_synack_retries, v: "2" }
+    # Keepalives detect Lambda containers frozen mid-connection.
+    - { k: net.ipv4.tcp_keepalive_time, v: "120" }
+    - { k: net.ipv4.tcp_keepalive_intvl, v: "30" }
+    - { k: net.ipv4.tcp_keepalive_probes, v: "4" }
+
+- name: Default ufw to deny inbound
+  community.general.ufw:
+    direction: "{{ item.d }}"
+    policy: "{{ item.p }}"
+  loop:
+    - { d: incoming, p: deny }
+    - { d: outgoing, p: allow }
+
+# Left unrestricted here on purpose: the Hostinger panel firewall already
+# pins SSH to the admin IP, and a second copy of that rule is one more place
+# to get locked out from.
+- name: Allow SSH
+  community.general.ufw:
+    rule: allow
+    port: "22"
+    proto: tcp
+
+# Docker publishes ports through its own iptables chain, which ufw never sees,
+# so these two rules neither open nor close anything on their own. The Hostinger
+# panel firewall is the real control; these exist so `ufw status` reflects what
+# is actually listening. Note they are allow, not limit: ufw limit bans a source
+# after ~6 connections in 30s, which a Lambda fleet behind shared NAT would trip
+# constantly. Authentication is mTLS and Redis ACLs; brute force is CrowdSec.
+- name: Allow pgbouncer
+  community.general.ufw:
+    rule: allow
+    port: "{{ pgbouncer_port }}"
+    proto: tcp
+
+- name: Allow each app's Redis
+  community.general.ufw:
+    rule: allow
+    port: "{{ item.redis_port }}"
+    proto: tcp
+  loop: "{{ apps }}"
+  loop_control:
+    label: "{{ item.name }}:{{ item.redis_port }}"
+
+- name: Enable ufw
+  community.general.ufw:
+    state: enabled

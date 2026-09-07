@@ -1,0 +1,28 @@
+[global]
+repo1-type=s3
+repo1-s3-bucket={{ backup_bucket }}
+repo1-s3-region={{ backup_region }}
+repo1-s3-endpoint=s3.{{ backup_region }}.amazonaws.com
+repo1-s3-key={{ backup_access_key_id }}
+repo1-s3-key-secret={{ backup_secret_access_key }}
+repo1-path=/pgbackrest
+
+# The bucket's IAM user holds DeleteObject but never DeleteObjectVersion, so
+# expiry only writes delete markers; the versions stay under Object Lock.
+repo1-retention-full={{ backup_retention_full }}
+repo1-retention-full-type=count
+
+repo1-cipher-type=aes-256-cbc
+repo1-cipher-pass={{ backup_cipher_pass }}
+
+compress-type=zst
+compress-level=3
+process-max=2
+log-level-console=info
+log-level-file=detail
+start-fast=y
+
+[main]
+pg1-path=/var/lib/postgresql/data/pgdata
+pg1-port=5432
+pg1-socket-path=/var/run/postgresql

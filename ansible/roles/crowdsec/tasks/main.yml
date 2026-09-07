@@ -1,0 +1,22 @@
+---
+- name: Add CrowdSec repository
+  ansible.builtin.shell:
+    cmd: curl -sS https://install.crowdsec.net | sh
+    creates: /etc/apt/sources.list.d/crowdsec_crowdsec.list
+
+- name: Install CrowdSec and the firewall bouncer
+  ansible.builtin.apt:
+    name:
+      - crowdsec
+      - crowdsec-firewall-bouncer-iptables
+    state: present
+    update_cache: true
+
+- name: Enable CrowdSec
+  ansible.builtin.service:
+    name: "{{ item }}"
+    state: started
+    enabled: true
+  loop:
+    - crowdsec
+    - crowdsec-firewall-bouncer

@@ -1,0 +1,134 @@
+---
+- name: Create the PKI directory
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0700"
+  loop:
+    - "{{ pki_dir }}"
+    - "{{ pki_dir }}/clients"
+
+# Two independent CAs. The server CA signs only this host's certificate; the
+# client CA signs only per-app client certificates. With one shared CA, any app
+# holding a client cert could present it as a server cert and MITM the others.
+- name: Generate CA private keys
+  community.crypto.openssl_privatekey:
+    path: "{{ pki_dir }}/{{ item }}-ca.key"
+    type: "{{ pki_key_type }}"
+    curve: "{{ pki_curve }}"
+    mode: "0600"
+  loop: [server, client]
+
+- name: Generate CA CSRs
+  community.crypto.openssl_csr:
+    path: "{{ pki_dir }}/{{ item }}-ca.csr"
+    privatekey_path: "{{ pki_dir }}/{{ item }}-ca.key"
+    common_name: "alphadevelopers {{ item }} CA"
+    basic_constraints: ["CA:TRUE"]
+    basic_constraints_critical: true
+    key_usage: ["keyCertSign", "cRLSign"]
+    key_usage_critical: true
+    mode: "0644"
+  loop: [server, client]
+
+- name: Self-sign the CAs
+  community.crypto.x509_certificate:
+    path: "{{ pki_dir }}/{{ item }}-ca.crt"
+    csr_path: "{{ pki_dir }}/{{ item }}-ca.csr"
+    privatekey_path: "{{ pki_dir }}/{{ item }}-ca.key"
+    provider: selfsigned
+    selfsigned_not_after: "+{{ pki_server_ca_days }}d"
+    mode: "0644"
+  loop: [server, client]
+
+- name: Generate the server key
+  community.crypto.openssl_privatekey:
+    path: "{{ pki_dir }}/server.key"
+    type: "{{ pki_key_type }}"
+    curve: "{{ pki_curve }}"
+    mode: "0600"
+
+# The IP is carried alongside the DNS name because libpq only began matching
+# iPAddress SANs in PostgreSQL 16; clients should still connect by name.
+- name: Generate the server CSR
+  community.crypto.openssl_csr:
+    path: "{{ pki_dir }}/server.csr"
+    privatekey_path: "{{ pki_dir }}/server.key"
+    common_name: "{{ vm_hostname }}"
+    subject_alt_name:
+      - "DNS:{{ vm_hostname }}"
+      - "IP:{{ vm_public_ip }}"
+      # Lets pgbouncer use verify-full over the container network.
+      - "DNS:postgres"
+    key_usage: ["digitalSignature", "keyEncipherment"]
+    extended_key_usage: ["serverAuth"]
+    mode: "0644"
+
+- name: Sign the server certificate
+  community.crypto.x509_certificate:
+    path: "{{ pki_dir }}/server.crt"
+    csr_path: "{{ pki_dir }}/server.csr"
+    provider: ownca
+    ownca_path: "{{ pki_dir }}/server-ca.crt"
+    ownca_privatekey_path: "{{ pki_dir }}/server-ca.key"
+    ownca_not_after: "+{{ pki_server_ca_days }}d"
+    mode: "0644"
+
+- name: Generate per-app client keys
+  community.crypto.openssl_privatekey:
+    path: "{{ pki_dir }}/clients/{{ item.name }}.key"
+    type: "{{ pki_key_type }}"
+    curve: "{{ pki_curve }}"
+    mode: "0600"
+  loop: "{{ apps }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+# CN must equal the Postgres role: pgbouncer authenticates the connection
+# against the certificate subject, so a stolen cert cannot become another app.
+- name: Generate per-app client CSRs
+  community.crypto.openssl_csr:
+    path: "{{ pki_dir }}/clients/{{ item.name }}.csr"
+    privatekey_path: "{{ pki_dir }}/clients/{{ item.name }}.key"
+    common_name: "{{ item.pg_role }}"
+    key_usage: ["digitalSignature"]
+    extended_key_usage: ["clientAuth"]
+    mode: "0644"
+  loop: "{{ apps }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Sign per-app client certificates
+  community.crypto.x509_certificate:
+    path: "{{ pki_dir }}/clients/{{ item.name }}.crt"
+    csr_path: "{{ pki_dir }}/clients/{{ item.name }}.csr"
+    provider: ownca
+    ownca_path: "{{ pki_dir }}/client-ca.crt"
+    ownca_privatekey_path: "{{ pki_dir }}/client-ca.key"
+    ownca_not_after: "+{{ pki_client_cert_days }}d"
+    mode: "0644"
+  loop: "{{ apps }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Read the server CA
+  ansible.builtin.slurp:
+    src: "{{ pki_dir }}/server-ca.crt"
+  register: pki_server_ca
+
+- name: Read per-app client certificates
+  ansible.builtin.slurp:
+    src: "{{ pki_dir }}/clients/{{ item.name }}.crt"
+  register: pki_client_certs
+  loop: "{{ apps }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Read per-app client keys
+  ansible.builtin.slurp:
+    src: "{{ pki_dir }}/clients/{{ item.name }}.key"
+  register: pki_client_keys
+  loop: "{{ apps }}"
+  loop_control:
+    label: "{{ item.name }}"
+  no_log: true

@@ -1,0 +1,15 @@
+---
+- name: Datastore host for the alphadevelopers POC platform
+  hosts: all
+  become: true
+  roles:
+    - base
+    - ssh-hardening
+    - crowdsec
+    - docker
+    - pki
+    - postgres
+    - pgbouncer
+    - redis
+    - pgbackrest
+    - app-credentials

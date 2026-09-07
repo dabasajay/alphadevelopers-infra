@@ -1,0 +1,63 @@
+---
+# One container per app. Numbered databases are not an isolation boundary:
+# ACLs cannot be scoped to a database number, maxmemory is server-wide, and
+# FLUSHALL crosses all of them.
+- name: "{{ app.name }}: create the Redis config directory"
+  ansible.builtin.file:
+    path: /etc/alphadevelopers/redis/{{ app.name }}
+    state: directory
+    mode: "0700"
+
+- name: "{{ app.name }}: stage the server key material"
+  ansible.builtin.copy:
+    src: "{{ pki_dir }}/{{ item }}"
+    dest: /etc/alphadevelopers/redis/{{ app.name }}/{{ item }}
+    remote_src: true
+    owner: "999"
+    group: "999"
+    mode: "0600"
+  loop:
+    - server.crt
+    - server.key
+    - server-ca.crt
+
+- name: "{{ app.name }}: generate the Redis password"
+  ansible.builtin.set_fact:
+    redis_password: "{{ lookup('password', secrets_out_dir + '/' + app.name + '-redis-password.txt length=40 chars=ascii_letters,digits') }}"
+  no_log: true
+
+- name: "{{ app.name }}: record the password for the credentials handoff"
+  ansible.builtin.set_fact:
+    redis_passwords: "{{ redis_passwords | default({}) | combine({app.name: redis_password}) }}"
+  no_log: true
+
+- name: "{{ app.name }}: render the Redis configuration"
+  ansible.builtin.template:
+    src: redis.conf.j2
+    dest: /etc/alphadevelopers/redis/{{ app.name }}/redis.conf
+    owner: "999"
+    group: "999"
+    mode: "0600"
+  register: redis_config
+  no_log: true
+
+- name: "{{ app.name }}: run the Redis container"
+  community.docker.docker_container:
+    name: "redis-{{ app.name }}"
+    image: "redis:{{ redis_version }}"
+    state: started
+    restart_policy: unless-stopped
+    networks:
+      - name: alphadevelopers
+    ports:
+      - "{{ app.redis_port }}:6379"
+    volumes:
+      - /etc/alphadevelopers/redis/{{ app.name }}:/certs:ro
+    command: ["redis-server", "/certs/redis.conf"]
+
+- name: "{{ app.name }}: restart Redis when its configuration changed"
+  community.docker.docker_container:
+    name: "redis-{{ app.name }}"
+    state: started
+    restart: true
+  when: redis_config.changed

@@ -1,0 +1,27 @@
+port 0
+tls-port 6379
+tls-cert-file /certs/server.crt
+tls-key-file /certs/server.key
+tls-ca-cert-file /certs/server-ca.crt
+# Clients verify the server; they authenticate with an ACL password, not a cert.
+tls-auth-clients no
+tls-protocols "TLSv1.2 TLSv1.3"
+
+requirepass {{ redis_password }}
+maxclients {{ app.redis_maxclients }}
+maxmemory {{ app.redis_maxmemory }}
+maxmemory-policy volatile-lru
+
+# Cache only. No RDB snapshots, no AOF: nothing here is worth persisting.
+save ""
+appendonly no
+
+# Reap sockets left by frozen or reaped Lambda containers.
+timeout 300
+tcp-keepalive 60
+maxmemory-clients 5%
+
+# Rename the commands that can wipe or reconfigure a shared instance.
+rename-command FLUSHALL ""
+rename-command FLUSHDB ""
+rename-command CONFIG ""

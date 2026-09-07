@@ -1,0 +1,134 @@
+---
+- name: Create the local secrets directory
+  ansible.builtin.file:
+    path: "{{ secrets_out_dir }}"
+    state: directory
+    mode: "0700"
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+- name: Create Postgres directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0700"
+    owner: "999"
+    group: "999"
+  loop:
+    - /var/lib/alphadevelopers/postgres
+    - /etc/alphadevelopers/postgres
+    - /etc/alphadevelopers/pgbackrest
+    - /var/lib/alphadevelopers/pgbackrest
+    - /var/log/alphadevelopers/pgbackrest
+
+- name: Stage the server key material for the container
+  ansible.builtin.copy:
+    src: "{{ pki_dir }}/{{ item }}"
+    dest: /etc/alphadevelopers/postgres/{{ item | basename }}
+    remote_src: true
+    owner: "999"
+    group: "999"
+    mode: "0600"
+  loop:
+    - server.crt
+    - server.key
+    - client-ca.crt
+
+- name: Render the Postgres configuration
+  ansible.builtin.template:
+    src: "{{ item }}.j2"
+    dest: /etc/alphadevelopers/postgres/{{ item }}
+    owner: "999"
+    group: "999"
+    mode: "0600"
+  loop:
+    - postgresql.conf
+    - pg_hba.conf
+  register: pg_config
+
+- name: Stage the image build context
+  ansible.builtin.template:
+    src: Dockerfile.j2
+    dest: /etc/alphadevelopers/postgres/Dockerfile
+    mode: "0644"
+  register: pg_dockerfile
+
+# community.docker 4+ moved building out of docker_image into this module.
+- name: Build the Postgres image with pgBackRest
+  community.docker.docker_image_build:
+    name: alphadevelopers/postgres
+    tag: "{{ pg_version }}"
+    path: /etc/alphadevelopers/postgres
+    pull: true
+    rebuild: "{{ 'always' if pg_dockerfile.changed else 'never' }}"
+
+- name: Generate the superuser password
+  ansible.builtin.set_fact:
+    pg_superuser_password: "{{ lookup('password', secrets_out_dir + '/postgres-superuser.txt length=40 chars=ascii_letters,digits') }}"
+  no_log: true
+
+# No published ports: reachable only from this bridge, or by docker exec.
+- name: Run the Postgres container
+  community.docker.docker_container:
+    name: postgres
+    image: "alphadevelopers/postgres:{{ pg_version }}"
+    state: started
+    restart_policy: unless-stopped
+    networks:
+      - name: alphadevelopers
+    env:
+      POSTGRES_PASSWORD: "{{ pg_superuser_password }}"
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - /var/lib/alphadevelopers/postgres:/var/lib/postgresql/data
+      - /etc/alphadevelopers/postgres:/certs:ro
+      - /etc/alphadevelopers/pgbackrest:/etc/pgbackrest:ro
+      - /var/lib/alphadevelopers/pgbackrest:/var/lib/pgbackrest
+      - /var/log/alphadevelopers/pgbackrest:/var/log/pgbackrest
+    command:
+      - postgres
+      - -c
+      - config_file=/certs/postgresql.conf
+      - -c
+      - hba_file=/certs/pg_hba.conf
+    comparisons:
+      env: strict
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+
+# docker_container will not notice a changed bind-mounted config file.
+- name: Restart Postgres when its configuration changed
+  community.docker.docker_container:
+    name: postgres
+    state: started
+    restart: true
+  when: pg_config.changed
+
+- name: Wait for Postgres to accept connections
+  ansible.builtin.command:
+    cmd: docker exec postgres pg_isready -U postgres
+  register: pg_ready
+  until: pg_ready.rc == 0
+  retries: 30
+  delay: 5
+  changed_when: false
+
+- name: Generate each app's database password
+  ansible.builtin.set_fact:
+    app_passwords: "{{ app_passwords | default({}) | combine({
+        item.name: lookup('password', secrets_out_dir + '/' + item.name + '-db-password.txt length=40 chars=ascii_letters,digits') }) }}"
+  loop: "{{ apps }}"
+  loop_control:
+    label: "{{ item.name }}"
+  no_log: true
+
+- name: Provision each app's role and database
+  ansible.builtin.include_tasks: app.yml
+  loop: "{{ apps }}"
+  loop_control:
+    loop_var: app
+    label: "{{ app.name }}"
