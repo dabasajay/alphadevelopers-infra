@@ -31,3 +31,8 @@ output "alerts_topic_arn" {
 output "alerts_edge_topic_arn" {
   value = aws_sns_topic.alerts_edge.arn
 }
+
+output "ssm_hybrid_role_name" {
+  description = "Passed to `aws ssm create-activation --iam-role` when registering the datastore host."
+  value       = aws_iam_role.ssm_hybrid.name
+}
