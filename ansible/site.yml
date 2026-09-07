@@ -5,7 +5,6 @@
   roles:
     - base
     - ssh-hardening
-    - crowdsec
     - docker
     # Outbound only: the agent dials SSM on 443 and the console tunnel rides
     # that connection, so no inbound port is opened for any of this.

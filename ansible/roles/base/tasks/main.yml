@@ -66,7 +66,10 @@
 # panel firewall is the real control; these exist so `ufw status` reflects what
 # is actually listening. Note they are allow, not limit: ufw limit bans a source
 # after ~6 connections in 30s, which a Lambda fleet behind shared NAT would trip
-# constantly. Authentication is mTLS and Redis ACLs; brute force is CrowdSec.
+# constantly. Both ports demand a client certificate signed by the private
+# client CA before the first protocol byte, so there are no credentials to
+# brute force; the residual risk is pre-auth connection exhaustion, bounded by
+# client_login_timeout and redis maxclients rather than by an IP ban list.
 - name: Allow pgbouncer
   community.general.ufw:
     rule: allow
