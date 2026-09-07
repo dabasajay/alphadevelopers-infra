@@ -7,12 +7,6 @@ variable "image_uri" {
   type        = string
 }
 
-variable "image_command" {
-  description = "Overrides the image CMD. Used to run a second handler from the same image."
-  type        = list(string)
-  default     = []
-}
-
 variable "memory_mb" {
   type    = number
   default = 1024
@@ -29,15 +23,9 @@ variable "reserved_concurrency" {
   default     = -1
 }
 
-variable "environment" {
-  description = "Seed values applied on create only. Later edits happen in the console; Terraform ignores the drift."
-  type        = map(string)
-  default     = {}
-}
-
 variable "policy_json" {
-  type    = string
-  default = null
+  description = "Permissions beyond CloudWatch Logs. Required; a plan-time-unknown value cannot gate a count."
+  type        = string
 }
 
 variable "log_retention_days" {

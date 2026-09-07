@@ -20,7 +20,6 @@ resource "aws_iam_role_policy_attachment" "logs" {
 }
 
 resource "aws_iam_role_policy" "extra" {
-  count  = var.policy_json == null ? 0 : 1
   name   = "${var.name}-policy"
   role   = aws_iam_role.this.id
   policy = var.policy_json
@@ -47,19 +46,8 @@ resource "aws_lambda_function" "this" {
 
   reserved_concurrent_executions = var.reserved_concurrency
 
-  dynamic "image_config" {
-    for_each = length(var.image_command) > 0 ? [1] : []
-    content {
-      command = var.image_command
-    }
-  }
-
-  environment {
-    variables = var.environment
-  }
-
-  # CI owns the deployed image and the console owns the environment, so both
-  # are seeded on create and never reconciled afterwards.
+  # CI owns the deployed image and the console owns the environment. Neither is
+  # declared here, and ignore_changes stops Terraform reconciling either away.
   lifecycle {
     ignore_changes = [image_uri, environment]
   }
