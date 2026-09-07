@@ -1,0 +1,23 @@
+---
+# Only the server CA, so the console can verify Postgres over the bridge. The
+# postgres role's own directory is 0600 for uid 999 and pgweb runs as its own
+# unprivileged user, so it needs a copy it can actually read.
+- name: Create the console certificate directory
+  ansible.builtin.file:
+    path: /etc/alphadevelopers/pgweb
+    state: directory
+    mode: "0755"
+
+- name: Stage the server CA for the console
+  ansible.builtin.copy:
+    src: "{{ pki_dir }}/server-ca.crt"
+    dest: /etc/alphadevelopers/pgweb/server-ca.crt
+    remote_src: true
+    mode: "0644"
+
+- name: Provision each app's read-only console
+  ansible.builtin.include_tasks: app.yml
+  loop: "{{ apps }}"
+  loop_control:
+    loop_var: app
+    label: "{{ app.name }}"

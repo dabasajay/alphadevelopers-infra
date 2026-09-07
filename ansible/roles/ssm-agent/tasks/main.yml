@@ -1,0 +1,76 @@
+---
+- name: Check whether this host is already registered with SSM
+  ansible.builtin.stat:
+    path: /var/lib/amazon/ssm/registration
+  register: ssm_registration
+
+- name: Check whether the agent is installed
+  ansible.builtin.stat:
+    path: /usr/bin/amazon-ssm-agent
+  register: ssm_binary
+
+# Installed once. Upgrades come from SSM's own agent auto-update, so re-running
+# this playbook against an unchanged host stays a no-op.
+- name: Install the SSM agent
+  ansible.builtin.apt:
+    deb: "https://s3.{{ backup_region }}.amazonaws.com/amazon-ssm-{{ backup_region }}/latest/debian_amd64/amazon-ssm-agent.deb"
+  when: not ssm_binary.stat.exists
+
+# The package starts the agent, which can do nothing until the host has an
+# identity, and registration refuses to run while it is up.
+- name: Stop the agent before registering
+  ansible.builtin.systemd_service:
+    name: amazon-ssm-agent
+    state: stopped
+  when: not ssm_registration.stat.exists
+
+# Single use and consumed immediately, so the code is never stored anywhere.
+# This is what keeps the host's SSM identity out of out/ and out of tfstate.
+# Tags on the activation are inherited by the node, and the IAM policy that
+# opens the console matches on them.
+- name: Create a single-use hybrid activation
+  ansible.builtin.command:
+    cmd: >-
+      aws ssm create-activation
+      --default-instance-name {{ vm_hostname }}
+      --iam-role {{ ssm_hybrid_role }}
+      --registration-limit 1
+      --region {{ backup_region }}
+      --tags Key=App,Value=shared Key=Env,Value=prod
+  environment:
+    AWS_PROFILE: "{{ aws_profile }}"
+  delegate_to: localhost
+  become: false
+  register: ssm_activation
+  when: not ssm_registration.stat.exists
+  changed_when: true
+  no_log: true
+
+- name: Register this host as a managed node
+  ansible.builtin.command:
+    cmd: >-
+      amazon-ssm-agent -register -y
+      -code {{ (ssm_activation.stdout | from_json).ActivationCode | quote }}
+      -id {{ (ssm_activation.stdout | from_json).ActivationId | quote }}
+      -region {{ backup_region }}
+  when: not ssm_registration.stat.exists
+  changed_when: true
+  no_log: true
+
+- name: Start the agent
+  ansible.builtin.systemd_service:
+    name: amazon-ssm-agent
+    state: started
+    enabled: true
+
+- name: Read the managed node id
+  ansible.builtin.slurp:
+    src: /var/lib/amazon/ssm/registration
+  register: ssm_registration_file
+
+# Needed by terraform to scope ssm:StartSession to this one host.
+- name: Report the managed node id
+  ansible.builtin.debug:
+    msg: >-
+      SSM managed node: {{ (ssm_registration_file.content | b64decode | from_json).ManagedInstanceID }}
+      (set datastore_instance_id in terraform/envs/prod/locals.tf)

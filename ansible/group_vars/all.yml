@@ -11,6 +11,12 @@ apps:
     pgbouncer_pool_size: 20
     redis_maxmemory: 256mb
     redis_maxclients: 100
+    # Read-only web console, published on loopback and reached over an SSM
+    # tunnel. Its own role and its own tiny connection budget, so a developer
+    # running a slow query cannot eat into the app's pool.
+    pg_console_role: resume_debug
+    console_port: 8081
+    console_connection_limit: 3
     # Used only to render the Lambda environment file.
     domain: easyjd.com
     pdf_bucket: alphadevelopers-prod-resume-builder-pdfs
@@ -31,6 +37,10 @@ admin_ip: 89.117.176.127
 pg_version: "18.6"
 pgbouncer_image: edoburu/pgbouncer:latest
 redis_version: "8.10.1"
+pgweb_image: sosedoff/pgweb:0.17.0
+
+# Created by terraform in services/shared. The agent assumes it once registered.
+ssm_hybrid_role: alphadevelopers-prod-ssm-hybrid
 
 # ECDSA P-256: an RSA-2048 cert, key and CA chain together exceed Lambda's 4KB
 # environment variable budget. P-256 is ~1.5KB for all three.

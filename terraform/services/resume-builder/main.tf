@@ -237,6 +237,31 @@ data "aws_iam_policy_document" "developer_debug" {
     resources = ["*"]
   }
 
+  # Session Manager port forwarding to the read-only database console. Both the
+  # document and the target have to be allowed for StartSession to succeed, so
+  # these two statements together permit one tunnel to one port on one host.
+  # There is no shell here: every interactive session document, and
+  # ssm:SendCommand itself, are denied in the shared guardrails policy.
+  statement {
+    sid       = "OpenTheDbConsoleTunnel"
+    actions   = ["ssm:StartSession"]
+    resources = [aws_ssm_document.db_console.arn]
+  }
+
+  statement {
+    sid       = "TunnelOnlyToTheDatastoreHost"
+    actions   = ["ssm:StartSession"]
+    resources = ["arn:aws:ssm:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:managed-instance/${var.datastore_instance_id}"]
+  }
+
+  # Session ARNs are suffixed with the caller's user name, so this lets a
+  # developer close their own tunnel and nobody else's.
+  statement {
+    sid       = "CloseOwnSessionsOnly"
+    actions   = ["ssm:TerminateSession", "ssm:ResumeSession"]
+    resources = ["arn:aws:ssm:*:*:session/&{aws:username}-*"]
+  }
+
   # The group also carries ReadOnlyAccess, which grants s3:GetObject on every
   # bucket. Terraform state holds the backup IAM secret in plaintext, and old
   # versions keep it even after the bucket is re-encrypted, so deny the whole

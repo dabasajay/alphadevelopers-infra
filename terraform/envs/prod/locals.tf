@@ -12,6 +12,12 @@ locals {
   # Must match backend.tf. Denied to the developer group; state holds secrets.
   state_bucket = "${local.org}-tfstate"
 
+  # Console-managed group carrying the region and destructive-action guardrail.
+  region_locked_group = "region-locked-non-destructive-access"
+
+  # Ansible mirrors its unrecoverable secrets here. Denied to developers.
+  ssm_secret_prefix = "/alphadevelopers/prod/ansible"
+
   # Looked up, not created: these zones hold live NS records.
   route53_zone_names = ["easyjd.com"]
 
@@ -32,7 +38,13 @@ locals {
     github_repo = "alpha-developers-org/resume-builder"
     # Console-managed group; Terraform only attaches the debug policy to it.
     developer_group = "easyjd-developers"
+    # Loopback port pgweb is published on. Must match ansible group_vars.
+    console_port = 8081
   }
+
+  # Registered by the ansible ssm-agent role. Scopes the console tunnel to this
+  # one host so a second datastore host later cannot be reached by accident.
+  datastore_instance_id = "mi-07483ed47d77f9a1a"
 
   # Alarms email here. The subscription needs confirming once from the inbox.
   alert_email       = "se.dabasajay@gmail.com"

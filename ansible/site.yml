@@ -7,10 +7,14 @@
     - ssh-hardening
     - crowdsec
     - docker
+    # Outbound only: the agent dials SSM on 443 and the console tunnel rides
+    # that connection, so no inbound port is opened for any of this.
+    - ssm-agent
     - pki
     - postgres
     - pgbouncer
     - redis
+    - db-console
     - pgbackrest
     # After pgbackrest: it resolves the AWS credentials this role publishes with.
     - cloudwatch-metrics

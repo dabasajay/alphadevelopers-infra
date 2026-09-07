@@ -25,3 +25,8 @@ output "pdf_bucket" {
 output "deploy_role_arn" {
   value = module.deploy_role.arn
 }
+
+output "db_console_document" {
+  description = "aws ssm start-session --target <node> --document-name <this>"
+  value       = aws_ssm_document.db_console.name
+}

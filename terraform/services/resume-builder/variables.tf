@@ -42,3 +42,13 @@ variable "tfstate_bucket_arn" {
   description = "Denied to the developer group: state holds secrets in plaintext."
   type        = string
 }
+
+variable "datastore_instance_id" {
+  description = "SSM managed node id of the datastore host, printed by the ansible ssm-agent role."
+  type        = string
+}
+
+variable "console_port" {
+  description = "Loopback port the read-only console is published on. Must match console_port in ansible group_vars."
+  type        = number
+}

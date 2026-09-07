@@ -1,0 +1,114 @@
+---
+# The running container is the only place this password lives, the same way the
+# postgres role recovers the superuser password from its container. Nothing to
+# keep in out/, and nothing to lose if this host is rebuilt: the role is
+# read-only, so a fresh password costs nothing.
+- name: "{{ app.name }}: read the console password off the running container"
+  ansible.builtin.command:
+    cmd: docker inspect -f '{{ "{{range .Config.Env}}{{println .}}{{end}}" }}' pgweb-{{ app.name }}
+  register: console_env
+  changed_when: false
+  failed_when: false
+  no_log: true
+
+- name: "{{ app.name }}: reuse the console password"
+  ansible.builtin.set_fact:
+    console_passwords: "{{ console_passwords | default({}) | combine({
+        app.name: console_env.stdout | regex_search('PGWEB_DATABASE_URL=postgres://[^:]+:([^@]+)@', '\\1') | first | urldecode }) }}"
+  when: console_env.rc == 0 and 'PGWEB_DATABASE_URL=' in console_env.stdout
+  no_log: true
+
+- name: "{{ app.name }}: generate a console password on first provision"
+  ansible.builtin.set_fact:
+    console_passwords: "{{ console_passwords | default({}) | combine({
+        app.name: lookup('password', '/dev/null length=40 chars=ascii_letters,digits') }) }}"
+  when: app.name not in (console_passwords | default({}))
+  no_log: true
+
+- name: "{{ app.name }}: check whether the console role exists"
+  ansible.builtin.command:
+    cmd: docker exec postgres psql -U postgres -tAc "SELECT 1 FROM pg_roles WHERE rolname = '{{ app.pg_console_role }}'"
+  register: console_role_exists
+  changed_when: false
+
+- name: "{{ app.name }}: create the console role"
+  ansible.builtin.command:
+    cmd: >-
+      docker exec postgres psql -U postgres -v ON_ERROR_STOP=1 -c
+      "CREATE ROLE {{ app.pg_console_role }} LOGIN PASSWORD '{{ console_passwords[app.name] }}'
+       CONNECTION LIMIT {{ app.console_connection_limit }}"
+  when: console_role_exists.stdout != "1"
+  no_log: true
+
+# Self-healing: if the role survived but the container did not, the password
+# just generated has to be pushed onto the role or the console cannot log in.
+- name: "{{ app.name }}: resync the console password to a rebuilt container"
+  ansible.builtin.command:
+    cmd: >-
+      docker exec postgres psql -U postgres -v ON_ERROR_STOP=1 -c
+      "ALTER ROLE {{ app.pg_console_role }} PASSWORD '{{ console_passwords[app.name] }}'"
+  when:
+    - console_role_exists.stdout == "1"
+    - console_env.rc != 0 or 'PGWEB_DATABASE_URL=' not in console_env.stdout
+  changed_when: true
+  no_log: true
+
+# Re-asserted every run so a manual grant cannot quietly widen this.
+# pg_read_all_data is cluster-wide but CONNECT is revoked from PUBLIC on every
+# app database, so it only ever reads the one database granted below.
+# default_transaction_read_only is the real guard: pgweb's --readonly is a
+# client-side string check, this refuses the write in the server.
+- name: "{{ app.name }}: keep the console role read-only"
+  ansible.builtin.command:
+    cmd: >-
+      docker exec postgres psql -U postgres -v ON_ERROR_STOP=1 -d {{ app.pg_database }} -c
+      "GRANT CONNECT ON DATABASE {{ app.pg_database }} TO {{ app.pg_console_role }};
+       GRANT USAGE ON SCHEMA public TO {{ app.pg_console_role }};
+       GRANT pg_read_all_data TO {{ app.pg_console_role }};
+       ALTER ROLE {{ app.pg_console_role }} IN DATABASE {{ app.pg_database }} SET default_transaction_read_only = on;
+       ALTER ROLE {{ app.pg_console_role }} IN DATABASE {{ app.pg_database }} SET statement_timeout = '15s';
+       ALTER ROLE {{ app.pg_console_role }} IN DATABASE {{ app.pg_database }} SET idle_session_timeout = '300s';"
+  changed_when: false
+
+- name: "{{ app.name }}: read the console connection limit"
+  ansible.builtin.command:
+    cmd: docker exec postgres psql -U postgres -tAc "SELECT rolconnlimit FROM pg_roles WHERE rolname = '{{ app.pg_console_role }}'"
+  register: console_limit
+  changed_when: false
+
+- name: "{{ app.name }}: correct the console connection limit"
+  ansible.builtin.command:
+    cmd: >-
+      docker exec postgres psql -U postgres -v ON_ERROR_STOP=1 -c
+      "ALTER ROLE {{ app.pg_console_role }} CONNECTION LIMIT {{ app.console_connection_limit }}"
+  when: console_limit.stdout | int != app.console_connection_limit | int
+
+- name: "{{ app.name }}: run the read-only console"
+  community.docker.docker_container:
+    name: pgweb-{{ app.name }}
+    image: "{{ pgweb_image }}"
+    state: started
+    restart_policy: unless-stopped
+    networks:
+      - name: alphadevelopers
+    # Loopback only, and deliberately so. A bare "{{ app.console_port }}:8081"
+    # would publish an unauthenticated database browser to the internet, and
+    # docker writes its own nat rules, so ufw would not stop it. The SSM tunnel
+    # is the only way in.
+    ports:
+      - "127.0.0.1:{{ app.console_port }}:8081"
+    env:
+      PGWEB_DATABASE_URL: >-
+        postgres://{{ app.pg_console_role }}:{{ console_passwords[app.name] }}@postgres:5432/{{ app.pg_database }}?sslmode=verify-full&sslrootcert=/certs/server-ca.crt
+    # The image entrypoint already sets --bind and --listen. --lock-session
+    # pins pgweb to this connection so the UI cannot be pointed elsewhere, and
+    # --no-ssh removes its ability to tunnel out.
+    command:
+      - --readonly
+      - --lock-session
+      - --no-ssh
+    volumes:
+      - /etc/alphadevelopers/pgweb:/certs:ro
+    comparisons:
+      env: strict
+  no_log: true

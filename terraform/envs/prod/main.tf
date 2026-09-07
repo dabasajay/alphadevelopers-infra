@@ -15,6 +15,10 @@ module "shared" {
   alert_email             = local.alert_email
   metrics_namespace       = local.metrics_namespace
   datastore_host          = local.datastore_host
+  developer_group         = local.resume_builder.developer_group
+  region_locked_group     = local.region_locked_group
+  state_bucket            = local.state_bucket
+  ssm_secret_prefix       = local.ssm_secret_prefix
 }
 
 # Apply only after an initial :latest image is pushed; a container-image Lambda
@@ -34,6 +38,9 @@ module "resume_builder" {
   waf_web_acl_arn   = module.shared.waf_web_acl_arn
   oidc_provider_arn = module.shared.github_oidc_provider_arn
   developer_group   = local.resume_builder.developer_group
+
+  console_port          = local.resume_builder.console_port
+  datastore_instance_id = local.datastore_instance_id
 
   tfstate_bucket_arn    = "arn:aws:s3:::${local.state_bucket}"
   alerts_topic_arn      = module.shared.alerts_topic_arn
