@@ -7,13 +7,6 @@ locals {
 
   name_prefix = "${local.org}-${local.env}"
 
-  # Hostinger VM. Both this name and its IP are in the server cert SAN.
-  db_host = "srv1136595.hstgr.cloud"
-
-  # Non-standard and below the 32768 ephemeral range, so the listener cannot
-  # lose its port to an outbound connection after a reboot.
-  pgbouncer_port = 24312
-
   backup_bucket_name = "${local.org}-${local.env}-db-backups"
 
   # Looked up, not created: these zones hold live NS records.
@@ -29,14 +22,11 @@ locals {
   # rule blocks bodies over 8KB so be careful.
   waf_enable_common_rules = false
 
-  # Optional fields (memory, timeouts, reserved concurrency, log retention)
-  # default in services/resume-builder/variables.tf.
+  # Datastore host, ports and credentials are console-managed Lambda env vars,
+  # so they are not Terraform's concern; see the ansible layer.
   resume_builder = {
     domain      = "easyjd.com"
-    github_repo = "dabasajay/resume-builder"
-    redis_port  = 24320
-    pg_database = "resume_db"
-    pg_role     = "resume_app"
+    github_repo = "alpha-developers-org/resume-builder"
   }
 
   # Provider default_tags applies these everywhere. Activate App, Env and Org

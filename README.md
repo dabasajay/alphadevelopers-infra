@@ -61,8 +61,8 @@ aws ecr get-login-password --region ap-south-1 \
   | docker login --username AWS --password-stdin $ACCOUNT.dkr.ecr.ap-south-1.amazonaws.com
 
 docker pull public.ecr.aws/lambda/python:3.13
-docker tag public.ecr.aws/lambda/python:3.13 $REPO:bootstrap
-docker push $REPO:bootstrap
+docker tag public.ecr.aws/lambda/python:3.13 $REPO:latest
+docker push $REPO:latest
 ```
 
 Then:
@@ -80,9 +80,10 @@ image from that point on and Terraform will not roll it back.
 
 1. **Activate cost allocation tags.** In Billing → Cost allocation tags, activate
    `App`, `Env`, `Org`. Not retroactive, and takes ~24h to populate.
-2. **Populate SSM.** Every parameter under `/alphadevelopers/prod/resume-builder/`
-   is created as a placeholder and written by Ansible in phase 2. The modules
-   ignore value drift, so out-of-band writes are expected.
+2. **Set the Lambda environment variables.** Terraform declares none and ignores
+   the attribute, so the console is the only owner: database host, port, name,
+   role and password, the Redis host and port, the JWT secret, the Google OAuth
+   pair, and the PDF bucket name. Nothing here passes through Terraform state.
 3. **Add the backup credentials to the VM.** `make output` prints the access key
    for pgBackRest. Retention is the last 3 fulls and only pgBackRest can enforce
    a count, so it holds `s3:DeleteObject` — which on a versioned bucket writes a

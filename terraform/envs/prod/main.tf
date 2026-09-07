@@ -14,21 +14,20 @@ module "shared" {
   waf_enable_common_rules = local.waf_enable_common_rules
 }
 
-# Uncomment once the ECR bootstrap image is pushed. The resume_builder output
-# in outputs.tf must be commented in tandem or validate fails.
-# module "resume_builder" {
-#   source = "../../services/resume-builder"
-#
-#   providers = {
-#     aws           = aws
-#     aws.us_east_1 = aws.us_east_1
-#   }
-#
-#   name_prefix       = local.name_prefix
-#   config            = local.resume_builder
-#   zone_id           = module.shared.zone_ids[local.resume_builder.domain]
-#   waf_web_acl_arn   = module.shared.waf_web_acl_arn
-#   oidc_provider_arn = module.shared.github_oidc_provider_arn
-#   db_host           = local.db_host
-#   pgbouncer_port    = local.pgbouncer_port
-# }
+# Apply only after an initial :latest image is pushed; a container-image Lambda
+# cannot be created against an empty repository.
+module "resume_builder" {
+  source = "../../services/resume-builder"
+
+  providers = {
+    aws           = aws
+    aws.us_east_1 = aws.us_east_1
+  }
+
+  name_prefix       = local.name_prefix
+  domain            = local.resume_builder.domain
+  github_repo       = local.resume_builder.github_repo
+  zone_id           = module.shared.zone_ids[local.resume_builder.domain]
+  waf_web_acl_arn   = module.shared.waf_web_acl_arn
+  oidc_provider_arn = module.shared.github_oidc_provider_arn
+}
