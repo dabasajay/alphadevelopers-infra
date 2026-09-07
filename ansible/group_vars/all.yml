@@ -28,7 +28,7 @@ redis_version: "8.10.1"
 
 # ECDSA P-256: an RSA-2048 cert, key and CA chain together exceed Lambda's 4KB
 # environment variable budget. P-256 is ~1.5KB for all three.
-pki_key_type: ECDSA
+pki_key_type: ECC
 pki_curve: secp256r1
 pki_dir: /etc/alphadevelopers/pki
 pki_server_ca_days: 1825
