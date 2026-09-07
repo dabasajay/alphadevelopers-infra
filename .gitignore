@@ -1,0 +1,29 @@
+# Terraform
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+*.tfplan
+tfplan
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# tfvars hold account-specific config; commit only the examples
+*.tfvars
+!*.tfvars.example
+
+# Ansible
+*.retry
+.vault_pass
+ansible/vault-password
+
+# Certs and keys never belong in git
+*.pem
+*.key
+*.crt
+*.csr
+
+.DS_Store
