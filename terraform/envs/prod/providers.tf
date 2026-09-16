@@ -17,3 +17,14 @@ provider "aws" {
     tags = local.common_tags
   }
 }
+
+# Management API token, not a project key. Exported as SUPABASE_ACCESS_TOKEN.
+provider "supabase" {}
+
+# Exported as VERCEL_API_TOKEN.
+provider "vercel" {
+  team = local.fireantslab.vercel_team
+}
+
+# Exported as CLOUDFLARE_API_TOKEN. DNS edit scope on this one zone is enough.
+provider "cloudflare" {}

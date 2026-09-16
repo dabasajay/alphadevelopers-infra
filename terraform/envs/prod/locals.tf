@@ -51,6 +51,29 @@ locals {
   metrics_namespace = "AlphaDevelopers/Datastore"
   datastore_host    = "srv1136595.hstgr.cloud"
 
+  # FireAnts Skills Registry. Next.js on Vercel, Supabase for auth/data/storage,
+  # AgentCore for the sandbox the playground and scans execute in. The domain is
+  # registered at Cloudflare, so DNS lives there rather than in Route53.
+  fireantslab = {
+    domain      = "fireantslab.com"
+    github_repo = "dabasajay/fireantslab.com"
+
+    # Supabase organization slug and the project's region. Keep the project in
+    # the same region as the AgentCore runtime: every playground turn crosses
+    # between them, and the archive bytes do too.
+    supabase_org_id = "REPLACE_WITH_SUPABASE_ORG_ID"
+    supabase_region = "ap-south-1"
+
+    # Vercel team slug, and the OIDC issuer that team's deployments present.
+    # The signing role trusts this, so Vercel never holds an AWS key.
+    vercel_team        = "REPLACE_WITH_VERCEL_TEAM_SLUG"
+    vercel_oidc_issuer = "https://oidc.vercel.com/REPLACE_WITH_VERCEL_TEAM_SLUG"
+
+    # Bounds a NEW websocket connection only. An established socket is closed by
+    # the runtime's own deadline and idle settings, not by this.
+    connect_window_seconds = 60
+  }
+
   # Provider default_tags applies these everywhere. Activate App, Env and Org
   # as cost allocation tags in Billing to get per-app cost breakdowns.
   common_tags = {
