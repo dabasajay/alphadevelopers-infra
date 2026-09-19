@@ -3,6 +3,8 @@ locals {
   env         = "prod"
   aws_profile = "alphadevelopers"
 
+  # Where resume-builder and the shared estate live. FireAnts sits in
+  # us-east-1 instead and carries its own region below.
   region = "ap-south-1"
 
   name_prefix = "${local.org}-${local.env}"
@@ -12,8 +14,9 @@ locals {
   # Must match backend.tf. Denied to the developer group; state holds secrets.
   state_bucket = "${local.org}-tfstate"
 
-  # Console-managed group carrying the region and destructive-action guardrail.
-  region_locked_group = "region-locked-non-destructive-access"
+  # The identity that applies this repository. ClaudeInfraPolicy grants it
+  # exactly the services declared here, in the two regions the account uses.
+  infra_user = "claude-user"
 
   # Ansible mirrors its unrecoverable secrets here. Denied to developers.
   ssm_secret_prefix = "/alphadevelopers/prod/ansible"
@@ -38,13 +41,9 @@ locals {
     github_repo = "alpha-developers-org/resume-builder"
     # Console-managed group; Terraform only attaches the debug policy to it.
     developer_group = "easyjd-developers"
-    # Loopback port pgweb is published on. Must match ansible group_vars.
-    console_port = 8081
   }
 
   # Registered by the ansible ssm-agent role. Scopes the console tunnel to this
-  # one host so a second datastore host later cannot be reached by accident.
-  datastore_instance_id = "mi-07483ed47d77f9a1a"
 
   # Alarms email here. The subscription needs confirming once from the inbox.
   alert_email       = "se.dabasajay@gmail.com"
@@ -52,27 +51,26 @@ locals {
   datastore_host    = "srv1136595.hstgr.cloud"
 
   # FireAnts Skills Registry. Next.js on Vercel, Supabase for auth/data/storage,
-  # AgentCore for the sandbox the playground and scans execute in. The domain is
+  # AgentCore for the playground the playground and scans execute in. The domain is
   # registered at Cloudflare, so DNS lives there rather than in Route53.
   fireantslab = {
-    domain      = "fireantslab.com"
-    github_repo = "dabasajay/fireantslab.com"
+    domain = "fireantslab.com"
 
-    # Supabase organization slug and the project's region. Keep the project in
-    # the same region as the AgentCore runtime: every playground turn crosses
-    # between them, and the archive bytes do too.
-    supabase_org_id = "REPLACE_WITH_SUPABASE_ORG_ID"
-    supabase_region = "ap-south-1"
+    # The one service outside ap-south-1: the AgentCore runtimes sit close to
+    # the frontend and the database that serve them, rather than with the rest
+    # of the estate. The guardrail in services/shared names what may exist here.
+    region = "us-east-1"
 
-    # Vercel team slug, and the OIDC issuer that team's deployments present.
-    # The signing role trusts this, so Vercel never holds an AWS key.
-    vercel_team        = "REPLACE_WITH_VERCEL_TEAM_SLUG"
-    vercel_oidc_issuer = "https://oidc.vercel.com/REPLACE_WITH_VERCEL_TEAM_SLUG"
-
-    # Bounds a NEW websocket connection only. An established socket is closed by
-    # the runtime's own deadline and idle settings, not by this.
-    connect_window_seconds = 60
+    # The frontend is hosted outside this account and is not managed here. Its
+    # deployments present an OIDC token; these roles trust that and nothing
+    # else, so no AWS key is ever stored there.
+    frontend_oidc_issuer   = "https://oidc.vercel.com/alphadevelopers"
+    frontend_oidc_audience = "https://vercel.com/alphadevelopers"
+    # One project, one environment. A preview deployment cannot assume these.
+    frontend_oidc_subject     = "owner:alphadevelopers:project:fireantslab-com:environment:production"
+    frontend_oidc_thumbprints = ["9e99a48a9960b14926bb7f3b02e22da2b0ab7280"]
   }
+
 
   # Provider default_tags applies these everywhere. Activate App, Env and Org
   # as cost allocation tags in Billing to get per-app cost breakdowns.

@@ -18,13 +18,15 @@ provider "aws" {
   }
 }
 
-# Management API token, not a project key. Exported as SUPABASE_ACCESS_TOKEN.
-provider "supabase" {}
+# FireAnts sits outside the estate's region on purpose, so it gets its own
+# provider rather than borrowing the CloudFront one that happens to share a
+# region today. Named for the app, so moving it is a one-line change here.
+provider "aws" {
+  alias   = "fireantslab"
+  region  = local.fireantslab.region
+  profile = local.aws_profile
 
-# Exported as VERCEL_API_TOKEN.
-provider "vercel" {
-  team = local.fireantslab.vercel_team
+  default_tags {
+    tags = local.common_tags
+  }
 }
-
-# Exported as CLOUDFLARE_API_TOKEN. DNS edit scope on this one zone is enough.
-provider "cloudflare" {}

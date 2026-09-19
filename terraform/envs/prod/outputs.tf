@@ -27,25 +27,10 @@ output "resume_builder" {
 
 output "fireantslab" {
   value = {
-    url = "https://${local.fireantslab.domain}"
-    mcp = "https://mcp.${local.fireantslab.domain}/mcp"
+    playground_ecr_repository_url = module.fireantslab.ecr_repository_url
+    scan_runtime_arn              = module.fireantslab.scan_runtime_arn
+    playground_runtime_arn        = module.fireantslab.playground_runtime_arn
 
-    supabase_project_ref = supabase_project.fireantslab.id
-    supabase_url         = "https://${supabase_project.fireantslab.id}.supabase.co"
-
-    vercel_project_id = vercel_project.fireantslab.id
-
-    sandbox_ecr_repository_url = aws_ecr_repository.fireantslab_sandbox.repository_url
-    scan_runtime_arn           = aws_bedrockagentcore_agent_runtime.fireantslab_scan.agent_runtime_arn
-    playground_runtime_arn     = aws_bedrockagentcore_agent_runtime.fireantslab_playground.agent_runtime_arn
-
-    ws_signer_role_arn = aws_iam_role.fireantslab_ws_signer.arn
-    control_role_arn   = aws_iam_role.fireantslab_control.arn
+    frontend_role_arn = module.fireantslab.frontend_role_arn
   }
-}
-
-# For the repository's deploy workflow secrets.
-output "fireantslab_db_password" {
-  value     = random_password.fireantslab_db.result
-  sensitive = true
 }
