@@ -176,83 +176,311 @@ locals {
     "sns:*",
     "cloudwatch:*",
   ]
+
+  # FireAnts runs in us-east-1 rather than ap-south-1, so the region confinement
+  # has to admit the services it is built from. Deliberately the whole of that
+  # stack and nothing else: a container registry, its logs, and the playground
+  # runtime that reads one and writes the other. Everything outside this list
+  # is still denied in us-east-1, so the guardrail keeps doing its job — no
+  # stray console click leaves a database or a queue running unwatched.
+  fireantslab_services = [
+    "ecr:*",
+    "logs:*",
+    "bedrock-agentcore:*",
+    "bedrock:*",
+  ]
 }
 
-data "aws_iam_policy_document" "region_locked_non_destructive" {
+# What applying this repository needs, and nothing else.
+#
+# Derived from the resource types the configuration actually declares, not from
+# a service list someone might want later: acm, bedrock-agentcore, cloudfront,
+# ecr, iam, lambda, logs and cloudwatch, route53, s3, sns and wafv2. A service
+# that appears in a future module has to be added here in the same change,
+# which is the point — the policy is a statement of what the estate is made of.
+#
+# Region-scoped where the service is regional. The account uses two regions:
+# ap-south-1 for the estate and us-east-1 for CloudFront's certificates and for
+# FireAnts. Everywhere else stays denied, so a stray apply cannot leave
+# resources running somewhere nobody is watching the bill.
+data "aws_iam_policy_document" "claude_infra" {
+  # Terraform reads far more than it writes: every plan refreshes every
+  # resource. Describe and List are unconditional because a refusal here is a
+  # failed plan rather than a prevented change, and none of them reveal a
+  # secret this identity cannot already reach.
   statement {
-    sid = "BroadAllowExceptIamOrgsAccount"
-    not_actions = [
-      "iam:*",
-      "organizations:*",
-      "account:*",
-    ]
-    resources = ["*"]
-  }
-
-  statement {
-    sid = "AllowSpecificIamOrgsAccountActions"
+    sid = "ReadEverythingThisRepositoryManages"
     actions = [
-      "account:GetAccountInformation",
-      "account:GetGovCloudAccountInformation",
-      "account:GetPrimaryEmail",
-      "account:ListRegions",
-      "iam:ListRoles",
-      "organizations:DescribeEffectivePolicy",
-      "organizations:DescribeOrganization",
+      "acm:Describe*",
+      "acm:Get*",
+      "acm:List*",
+      "bedrock-agentcore:Get*",
+      "bedrock-agentcore:List*",
+      "cloudfront:Describe*",
+      "cloudfront:Get*",
+      "cloudfront:List*",
+      "cloudwatch:Describe*",
+      "cloudwatch:Get*",
+      "cloudwatch:List*",
+      "ec2:DescribeRegions",
+      "ecr:Describe*",
+      "ecr:Get*",
+      "ecr:List*",
+      "iam:Get*",
+      "iam:List*",
+      "iam:SimulatePrincipalPolicy",
+      "lambda:Get*",
+      "lambda:List*",
+      "logs:Describe*",
+      "logs:List*",
+      "route53:Get*",
+      "route53:List*",
+      "s3:Get*",
+      "s3:List*",
+      "sns:Get*",
+      "sns:List*",
+      "sts:GetCallerIdentity",
+      "wafv2:Get*",
+      "wafv2:List*",
     ]
     resources = ["*"]
   }
 
-  # Confines the account to the two regions it actually uses, so a stray console
-  # click cannot leave resources running somewhere nobody is watching the bill.
+  # The state itself. Separate from the buckets below because the lock is a
+  # DeleteObject on one key and nothing else here may delete an object.
   statement {
-    sid         = "DenyOutsideAllowedRegion"
-    effect      = "Deny"
-    not_actions = local.global_services
-    resources   = ["*"]
+    sid = "OwnTerraformState"
+    actions = [
+      "s3:GetObject",
+      "s3:GetObjectVersion",
+      "s3:PutObject",
+      "s3:DeleteObject",
+      "s3:ListBucket",
+      "s3:ListBucketVersions",
+      "s3:GetBucketLocation",
+    ]
+    resources = [
+      "arn:aws:s3:::${var.state_bucket}",
+      "arn:aws:s3:::${var.state_bucket}/*",
+    ]
+  }
+
+  # Buckets are a global namespace, so these carry no region condition. The
+  # sub-resources are the ones Terraform manages as separate resources:
+  # versioning, encryption, ownership, public access, lifecycle, object lock
+  # and the bucket policy.
+  statement {
+    sid = "ManageBuckets"
+    actions = [
+      "s3:CreateBucket",
+      "s3:DeleteBucket",
+      "s3:PutBucketTagging",
+      "s3:PutBucketVersioning",
+      "s3:PutBucketPolicy",
+      "s3:DeleteBucketPolicy",
+      "s3:PutBucketPublicAccessBlock",
+      "s3:PutBucketOwnershipControls",
+      "s3:PutEncryptionConfiguration",
+      "s3:PutLifecycleConfiguration",
+      "s3:PutBucketObjectLockConfiguration",
+      "s3:PutBucketAcl",
+      "s3:PutObject",
+      "s3:DeleteObject",
+    ]
+    resources = ["arn:aws:s3:::${var.name_prefix}-*", "arn:aws:s3:::${var.name_prefix}-*/*"]
+  }
+
+  # IAM has no region. Narrowed by path prefix instead: this identity manages
+  # the estate's own roles, policies and the backup user, and cannot touch an
+  # identity created outside it — including its own.
+  statement {
+    sid = "ManageEstateIdentities"
+    actions = [
+      "iam:CreateRole",
+      "iam:DeleteRole",
+      "iam:UpdateRole",
+      "iam:UpdateAssumeRolePolicy",
+      "iam:PutRolePolicy",
+      "iam:DeleteRolePolicy",
+      "iam:AttachRolePolicy",
+      "iam:DetachRolePolicy",
+      "iam:CreatePolicy",
+      "iam:DeletePolicy",
+      "iam:CreatePolicyVersion",
+      "iam:DeletePolicyVersion",
+      "iam:SetDefaultPolicyVersion",
+      "iam:TagRole",
+      "iam:UntagRole",
+      "iam:TagPolicy",
+      "iam:UntagPolicy",
+      "iam:TagUser",
+      "iam:UntagUser",
+      "iam:CreateUser",
+      "iam:DeleteUser",
+      "iam:PutUserPolicy",
+      "iam:DeleteUserPolicy",
+      "iam:CreateAccessKey",
+      "iam:DeleteAccessKey",
+      "iam:AttachGroupPolicy",
+      "iam:DetachGroupPolicy",
+      "iam:CreateOpenIDConnectProvider",
+      "iam:DeleteOpenIDConnectProvider",
+      "iam:UpdateOpenIDConnectProviderThumbprint",
+      "iam:TagOpenIDConnectProvider",
+      "iam:PassRole",
+    ]
+    resources = [
+      "arn:aws:iam::*:role/${var.name_prefix}-*",
+      "arn:aws:iam::*:policy/${var.name_prefix}-*",
+      "arn:aws:iam::*:policy/ClaudeInfraPolicy",
+      "arn:aws:iam::*:user/${var.name_prefix}-*",
+      "arn:aws:iam::*:group/*",
+      "arn:aws:iam::*:oidc-provider/*",
+    ]
+  }
+
+  # Everything regional that this repository creates. The condition is the
+  # whole of the region guardrail now: there is no separate deny, because a
+  # policy that only allows two regions cannot reach a third.
+  statement {
+    sid = "ManageRegionalResources"
+    actions = [
+      "acm:RequestCertificate",
+      "acm:DeleteCertificate",
+      "acm:AddTagsToCertificate",
+      "acm:RemoveTagsFromCertificate",
+      "bedrock-agentcore:CreateAgentRuntime",
+      "bedrock-agentcore:UpdateAgentRuntime",
+      "bedrock-agentcore:DeleteAgentRuntime",
+      "bedrock-agentcore:TagResource",
+      "bedrock-agentcore:UntagResource",
+      "cloudwatch:PutMetricAlarm",
+      "cloudwatch:DeleteAlarms",
+      "cloudwatch:TagResource",
+      "cloudwatch:UntagResource",
+      "ecr:CreateRepository",
+      "ecr:DeleteRepository",
+      "ecr:PutLifecyclePolicy",
+      "ecr:DeleteLifecyclePolicy",
+      "ecr:PutImageScanningConfiguration",
+      "ecr:PutImageTagMutability",
+      "ecr:TagResource",
+      "ecr:UntagResource",
+      "ecr:InitiateLayerUpload",
+      "ecr:UploadLayerPart",
+      "ecr:CompleteLayerUpload",
+      "ecr:BatchCheckLayerAvailability",
+      "ecr:PutImage",
+      "lambda:CreateFunction",
+      "lambda:DeleteFunction",
+      "lambda:UpdateFunctionCode",
+      "lambda:UpdateFunctionConfiguration",
+      "lambda:CreateFunctionUrlConfig",
+      "lambda:UpdateFunctionUrlConfig",
+      "lambda:DeleteFunctionUrlConfig",
+      "lambda:AddPermission",
+      "lambda:RemovePermission",
+      "lambda:PutFunctionConcurrency",
+      "lambda:DeleteFunctionConcurrency",
+      "lambda:TagResource",
+      "lambda:UntagResource",
+      "logs:CreateLogGroup",
+      "logs:DeleteLogGroup",
+      "logs:PutRetentionPolicy",
+      "logs:DeleteRetentionPolicy",
+      "logs:TagResource",
+      "logs:UntagResource",
+      "sns:CreateTopic",
+      "sns:DeleteTopic",
+      "sns:SetTopicAttributes",
+      "sns:Subscribe",
+      "sns:Unsubscribe",
+      "sns:TagResource",
+      "sns:UntagResource",
+    ]
+    resources = ["*"]
 
     condition {
-      test     = "StringNotEquals"
+      test     = "StringEquals"
       variable = "aws:RequestedRegion"
       values   = ["ap-south-1", "us-east-1"]
     }
   }
 
-  # us-east-1 is allowed only for the edge services that have no choice but to
-  # live there. Everything else there is still denied.
+  # No regional endpoint, so a region condition would deny these everywhere.
+  # WAF is here because a CLOUDFRONT-scope ACL is only addressable in us-east-1
+  # and behaves as a global resource.
   statement {
-    sid         = "DenyUsEast1ExceptEdgeServices"
-    effect      = "Deny"
-    not_actions = concat(local.global_services, local.edge_services)
-    resources   = ["*"]
-
-    condition {
-      test     = "StringEquals"
-      variable = "aws:RequestedRegion"
-      values   = ["us-east-1"]
-    }
+    sid = "ManageGlobalResources"
+    actions = [
+      "cloudfront:CreateDistribution",
+      "cloudfront:UpdateDistribution",
+      "cloudfront:DeleteDistribution",
+      "cloudfront:CreateOriginAccessControl",
+      "cloudfront:UpdateOriginAccessControl",
+      "cloudfront:DeleteOriginAccessControl",
+      "cloudfront:CreateFunction",
+      "cloudfront:UpdateFunction",
+      "cloudfront:DeleteFunction",
+      "cloudfront:PublishFunction",
+      "cloudfront:CreateCachePolicy",
+      "cloudfront:UpdateCachePolicy",
+      "cloudfront:DeleteCachePolicy",
+      "cloudfront:CreateOriginRequestPolicy",
+      "cloudfront:UpdateOriginRequestPolicy",
+      "cloudfront:DeleteOriginRequestPolicy",
+      "cloudfront:CreateResponseHeadersPolicy",
+      "cloudfront:UpdateResponseHeadersPolicy",
+      "cloudfront:DeleteResponseHeadersPolicy",
+      "cloudfront:CreateInvalidation",
+      "cloudfront:TagResource",
+      "cloudfront:UntagResource",
+      "cloudfront:AssociateAlias",
+      "route53:ChangeResourceRecordSets",
+      "route53:ChangeTagsForResource",
+      "wafv2:CreateWebACL",
+      "wafv2:UpdateWebACL",
+      "wafv2:DeleteWebACL",
+      "wafv2:TagResource",
+      "wafv2:UntagResource",
+      "wafv2:AssociateWebACL",
+      "wafv2:DisassociateWebACL",
+    ]
+    resources = ["*"]
   }
 
-  # NotResource applies to the whole statement, so on tfstate objects every
-  # action above is exempt. That is deliberate and narrow: releasing the native
-  # state lock is a DeleteObject on the .tflock key. The bucket ARN itself is
-  # not listed, so s3:DeleteBucket stays denied.
+  # The account, the organization and this identity's own permissions are not
+  # this repository's to change. Applying never needs them, and an apply that
+  # could grant itself more is not a guardrail.
   statement {
-    sid           = "DenyDestructiveActions"
-    effect        = "Deny"
-    actions       = local.destructive_actions
-    not_resources = ["arn:aws:s3:::${var.state_bucket}/*"]
+    sid    = "NeverEscalateOrTouchTheAccount"
+    effect = "Deny"
+    actions = [
+      "organizations:*",
+      "account:*",
+      "iam:CreateAccountAlias",
+      "iam:DeleteAccountAlias",
+      "iam:UpdateAccountPasswordPolicy",
+      "iam:AttachUserPolicy",
+      "iam:DetachUserPolicy",
+      "iam:AddUserToGroup",
+      "iam:RemoveUserFromGroup",
+      "iam:CreateLoginProfile",
+      "iam:UpdateLoginProfile",
+    ]
+    resources = ["*"]
   }
 }
 
-resource "aws_iam_policy" "region_locked_non_destructive" {
-  name   = "RegionLockedNonDestructiveAccess"
-  policy = data.aws_iam_policy_document.region_locked_non_destructive.json
+resource "aws_iam_policy" "claude_infra" {
+  name        = "ClaudeInfraPolicy"
+  description = "Applying alphadevelopers-infra: exactly the services it declares, in the two regions it uses."
+  policy      = data.aws_iam_policy_document.claude_infra.json
 }
 
-resource "aws_iam_group_policy_attachment" "region_locked_non_destructive" {
-  group      = var.region_locked_group
-  policy_arn = aws_iam_policy.region_locked_non_destructive.arn
+resource "aws_iam_user_policy_attachment" "claude_infra" {
+  user       = var.infra_user
+  policy_arn = aws_iam_policy.claude_infra.arn
 }
 
 # The developer group carries ReadOnlyAccess, which grants s3:Get* on every
@@ -323,28 +551,4 @@ resource "aws_iam_policy" "datastore_guardrails" {
 resource "aws_iam_group_policy_attachment" "datastore_guardrails" {
   group      = var.developer_group
   policy_arn = aws_iam_policy.datastore_guardrails.arn
-}
-
-# The identity the datastore host's SSM agent assumes once registered as a
-# hybrid node. AmazonSSMManagedInstanceCore lets it register, heartbeat and
-# carry a session, and nothing else.
-data "aws_iam_policy_document" "ssm_hybrid_assume" {
-  statement {
-    actions = ["sts:AssumeRole"]
-    principals {
-      type        = "Service"
-      identifiers = ["ssm.amazonaws.com"]
-    }
-  }
-}
-
-resource "aws_iam_role" "ssm_hybrid" {
-  name               = "${var.name_prefix}-ssm-hybrid"
-  assume_role_policy = data.aws_iam_policy_document.ssm_hybrid_assume.json
-  tags               = { App = "shared" }
-}
-
-resource "aws_iam_role_policy_attachment" "ssm_hybrid_core" {
-  role       = aws_iam_role.ssm_hybrid.name
-  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
 }

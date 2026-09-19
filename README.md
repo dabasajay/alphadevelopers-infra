@@ -34,6 +34,46 @@ Adding a POC app = a new `services/<app>/` folder, an entry in
 services are env-agnostic and take variables; everything env-specific is a
 local, so there are no tfvars to supply.
 
+## FireAnts
+
+The AWS half of the product: one ECR repository and two AgentCore runtimes that
+execute untrusted skill content, plus the role its frontend assumes through
+OIDC so nothing has to hold an AWS key. Supabase, Vercel and Cloudflare serve
+the same product and are **not managed here** for now.
+
+Google Cloud is not managed here. The project holds the OAuth client for
+Google sign-in, and none of it is Terraformable: with no Workspace organization
+the consent screen must be External, and Google only creates Internal brands
+through its API. Nothing else in that project is used, so there is no provider
+for it.
+
+The one service outside ap-south-1: both runtimes sit in us-east-1, and
+`iam-guardrails.tf` names the services allowed to exist there. Adding one to the
+module means adding it to that list in the same change.
+
+A runtime cannot be created against an empty ECR repository, the same way a
+container-image Lambda cannot, so the first apply goes in two steps:
+
+```sh
+TF="tofu -chdir=terraform/envs/prod"
+$TF apply -target=module.fireantslab.module.playground_image
+
+ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
+REPO=$ACCOUNT.dkr.ecr.us-east-1.amazonaws.com/alphadevelopers-prod-fireantslab-playground
+
+aws ecr get-login-password --region us-east-1 \
+  | docker login --username AWS --password-stdin $ACCOUNT.dkr.ecr.us-east-1.amazonaws.com
+
+# AgentCore runs arm64 and rejects anything else. The real image comes from the
+# app repo's `bun run playground:build`; CI owns the tag from the first deploy on.
+docker pull --platform linux/arm64 public.ecr.aws/docker/library/alpine:3.20
+docker tag public.ecr.aws/docker/library/alpine:3.20 $REPO:latest
+docker push $REPO:latest
+```
+
+Then `make plan && make apply`. `make output` gives the runtime and role ARNs
+the frontend needs; they are set there by hand until Vercel is managed here too.
+
 ## First run
 
 Requires an AWS profile whose credentials expire — SSO is preferred over static keys.
@@ -109,59 +149,19 @@ image from that point on and Terraform will not roll it back.
 
 ## Database access for developers
 
-A read-only web console per app, reached over an IAM-authenticated Session
-Manager tunnel. Nothing is exposed: the console binds `127.0.0.1` on the VM and
-the SSM agent dials out, so no inbound port is opened for any of it.
+Was a read-only console on the VM, reached over a Session Manager tunnel. Gone
+with the SSM document that carried it: resume-builder's database is moving to
+Supabase, which brings its own console and its own authorization, and keeping a
+tunnel to a host that no longer holds the data would have been a standing
+grant for nothing.
 
-One-time setup per developer:
-
-```sh
-brew install --cask session-manager-plugin   # or the AWS bundle installer
-```
-
-Then, per session:
-
-```sh
-AWS_PROFILE=alphadevelopers aws ssm start-session \
-  --target "$(aws ssm describe-instance-information \
-      --query 'InstanceInformationList[0].InstanceId' --output text)" \
-  --document-name alphadevelopers-prod-resume-builder-db-console \
-  --parameters '{"localPortNumber":["8091"]}'
-```
-
-Leave it running and open <http://localhost:8091>. `make db-console` does the
-same thing, in this repo and in the app repo. The port is 8091 rather than 8081
-because the app repo's docker-compose publishes local pgweb on 8081, and reading
-production while believing it is local seed data is a mistake worth designing
-out.
-
-What a developer can and cannot do:
-
-- **Read every table** in their app's database, via `pg_read_all_data`.
-- **Not write anything.** The role has `default_transaction_read_only = on`, so
-  Postgres refuses the write itself. pgweb's own `--readonly` is only a keyword
-  check on the query string and a CTE walks straight past it; the server-side
-  setting is the guard that matters.
-- **Not reach any other port.** `portNumber` is a literal in the session
-  document, not a parameter, so it cannot be overridden. AWS's own
-  `AWS-StartPortForwardingSession` does take it as a parameter, which is why
-  that document is explicitly denied.
-- **Not get a shell.** `StartSession` authorises against the document as well as
-  the target, and every interactive document is denied, as is
-  `ssm:SendCommand` — Run Command executes as root.
-- **Not starve the app.** Its own role, `CONNECTION LIMIT 3`, and
-  `statement_timeout = 15s`.
-
-Sessions cost $0.05 each from 30 September 2026 and nothing before that, with no
-duration component — so one tunnel left open all day costs the same as one
-opened for a minute, and reopening it repeatedly is the only way to run the bill
-up. At 3 developers opening it twice a day that is about $6.60/month; opening it
-once and leaving it up halves that. The console itself is a ~30MB container on a
-VM that is already paid for.
+The guardrails that denied a shell on that host are still in place. They cost
+nothing and the VM still runs Redis.
 
 ## Notes
 
 - ACM certs and the WAF ACL are in `us-east-1` because CloudFront requires it.
+  FireAnts runs there too, on purpose — see `services/fireantslab/README.md`.
   Everything else is `ap-south-1`, matching the Mumbai VM.
 - SPA routing uses a CloudFront Function, not `custom_error_response` — the latter
   is distribution-wide and would rewrite real API 403s and 404s into `index.html`.

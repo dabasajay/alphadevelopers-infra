@@ -45,11 +45,6 @@ variable "developer_group" {
   type        = string
 }
 
-variable "region_locked_group" {
-  description = "Console-managed group holding the region and destructive-action guardrail."
-  type        = string
-}
-
 variable "state_bucket" {
   description = "Exempted from the destructive-action deny so the native state lock can be released."
   type        = string
@@ -57,5 +52,10 @@ variable "state_bucket" {
 
 variable "ssm_secret_prefix" {
   description = "Parameter Store prefix holding ansible's recovery secrets. Denied to developers."
+  type        = string
+}
+
+variable "infra_user" {
+  description = "The IAM user that applies this repository. ClaudeInfraPolicy attaches to it."
   type        = string
 }
