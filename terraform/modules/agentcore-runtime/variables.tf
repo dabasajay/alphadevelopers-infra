@@ -31,8 +31,3 @@ variable "server_protocol" {
   type    = string
   default = "HTTP"
 }
-
-variable "environment" {
-  type    = map(string)
-  default = {}
-}

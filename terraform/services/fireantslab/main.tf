@@ -98,11 +98,6 @@ module "scan_runtime" {
   description   = "Detonation scans. Its output is evidence, never a verdict."
   role_arn      = aws_iam_role.runtime.arn
   container_uri = "${module.playground_image.repository_url}:latest"
-
-  environment = {
-    FIREANTS_ROLE     = "scan"
-    FIREANTS_SITE_URL = "https://${var.domain}"
-  }
 }
 
 module "playground_runtime" {
@@ -112,12 +107,4 @@ module "playground_runtime" {
   description   = "Interactive playground sessions over websockets."
   role_arn      = aws_iam_role.runtime.arn
   container_uri = "${module.playground_image.repository_url}:latest"
-
-  # No admission secret yet. A signed URL alone admits nobody, so whatever
-  # replaces it still has to be verified inside the runtime against stored
-  # session state rather than trusted from the connection.
-  environment = {
-    FIREANTS_ROLE     = "playground"
-    FIREANTS_SITE_URL = "https://${var.domain}"
-  }
 }
