@@ -66,8 +66,14 @@ data "aws_iam_policy_document" "runtime" {
 
   statement {
     sid       = "WriteOnlyItsOwnLogs"
-    actions   = ["logs:CreateLogStream", "logs:PutLogEvents", "logs:DescribeLogStreams"]
-    resources = ["${aws_cloudwatch_log_group.runtime.arn}:*"]
+    actions   = ["logs:CreateLogGroup", "logs:CreateLogStream", "logs:PutLogEvents", "logs:DescribeLogStreams"]
+    resources = flatten([for g in aws_cloudwatch_log_group.runtime : [g.arn, "${g.arn}:*"]])
+  }
+
+  statement {
+    sid       = "FindItsLogGroup"
+    actions   = ["logs:DescribeLogGroups"]
+    resources = ["arn:aws:logs:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:log-group:*"]
   }
 
   statement {
@@ -83,8 +89,14 @@ resource "aws_iam_role_policy" "runtime" {
   policy = data.aws_iam_policy_document.runtime.json
 }
 
+# AgentCore writes to this exact path and nowhere else, so the name is not ours to choose.
 resource "aws_cloudwatch_log_group" "runtime" {
-  name              = "/aws/bedrock-agentcore/${local.name}"
+  for_each = {
+    scan       = module.scan_runtime.id
+    playground = module.playground_runtime.id
+  }
+
+  name              = "/aws/bedrock-agentcore/runtimes/${each.value}-DEFAULT"
   retention_in_days = 30
   tags              = local.tags
 }
