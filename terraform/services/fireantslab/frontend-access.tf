@@ -89,6 +89,14 @@ data "aws_iam_policy_document" "deploy" {
     resources = [module.playground_image.arn]
   }
 
+  # A runtime id is generated, so CI resolves it from the name it knows. Listing
+  # is read-only and scoped to this account's runtimes.
+  statement {
+    sid       = "FindRuntimesByName"
+    actions   = ["bedrock-agentcore:ListAgentRuntimes"]
+    resources = ["arn:aws:bedrock-agentcore:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:runtime/*"]
+  }
+
   # Update, not create: the runtimes exist in Terraform, and CI only moves them
   # onto the image it just pushed.
   statement {
