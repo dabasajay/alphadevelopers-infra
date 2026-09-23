@@ -107,6 +107,20 @@ data "aws_iam_policy_document" "deploy" {
       module.playground_runtime.arn,
     ]
   }
+
+  # An update replaces the whole runtime, so it re-passes the execution role.
+  # The condition is what stops that role being handed to anything else.
+  statement {
+    sid       = "PassTheRuntimeRole"
+    actions   = ["iam:PassRole"]
+    resources = [aws_iam_role.runtime.arn]
+
+    condition {
+      test     = "StringEquals"
+      variable = "iam:PassedToService"
+      values   = ["bedrock-agentcore.amazonaws.com"]
+    }
+  }
 }
 
 module "deploy_role" {
