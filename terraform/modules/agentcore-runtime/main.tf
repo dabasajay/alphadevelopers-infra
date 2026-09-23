@@ -22,9 +22,10 @@ resource "aws_bedrockagentcore_agent_runtime" "this" {
     server_protocol = var.server_protocol
   }
 
-  environment_variables = var.environment
-
+  # Neither the image nor the environment is owned here. CI publishes what the
+  # tag points at, and the runtime's own configuration — its model key above all
+  # — is set on the console, so an apply must not roll either back.
   lifecycle {
-    ignore_changes = [agent_runtime_artifact]
+    ignore_changes = [agent_runtime_artifact, environment_variables]
   }
 }
