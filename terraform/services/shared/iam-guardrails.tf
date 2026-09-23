@@ -407,6 +407,25 @@ data "aws_iam_policy_document" "claude_infra" {
     }
   }
 
+  # Invoking is not managing. A developer runs the app locally against the
+  # deployed playground runtime, and that connection is signed by this identity,
+  # so without these the local-against-AgentCore path cannot be exercised.
+  statement {
+    sid = "InvokeRuntimesForLocalDevelopment"
+    actions = [
+      "bedrock-agentcore:InvokeAgentRuntime",
+      "bedrock-agentcore:InvokeAgentRuntimeWithWebSocketStream",
+      "bedrock-agentcore:StopRuntimeSession",
+    ]
+    resources = ["*"]
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestedRegion"
+      values   = ["ap-south-1", "us-east-1"]
+    }
+  }
+
   # No regional endpoint, so a region condition would deny these everywhere.
   # WAF is here because a CLOUDFRONT-scope ACL is only addressable in us-east-1
   # and behaves as a global resource.
