@@ -2,8 +2,9 @@ variable "name" {
   type = string
 }
 
-variable "repository" {
-  description = "owner/repo"
+variable "subject_prefix" {
+  # A repo with immutable subjects carries numeric ids, so this is not owner/repo.
+  description = "The repository's sub_claim_prefix, from /actions/oidc/customization/sub."
   type        = string
 }
 

@@ -105,7 +105,7 @@ module "deploy_role" {
   source = "../../modules/github-oidc-role"
 
   name              = "${local.name}-deploy"
-  repository        = var.github_repo
+  subject_prefix    = var.github_subject_prefix
   oidc_provider_arn = var.oidc_provider_arn
   policy_json       = data.aws_iam_policy_document.deploy.json
   tags              = local.tags

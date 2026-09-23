@@ -7,8 +7,8 @@ variable "domain" {
   type        = string
 }
 
-variable "github_repo" {
-  description = "owner/repo whose main branch may publish the playground image."
+variable "github_subject_prefix" {
+  description = "OIDC subject prefix of the repo whose main branch may publish the image."
   type        = string
 }
 

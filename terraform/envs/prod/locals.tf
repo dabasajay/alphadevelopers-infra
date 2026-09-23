@@ -37,8 +37,8 @@ locals {
   # Datastore host, ports and credentials are console-managed Lambda env vars,
   # so they are not Terraform's concern; see the ansible layer.
   resume_builder = {
-    domain      = "easyjd.com"
-    github_repo = "alpha-developers-org/resume-builder"
+    domain                = "easyjd.com"
+    github_subject_prefix = "repo:alpha-developers-org/resume-builder"
     # Console-managed group; Terraform only attaches the debug policy to it.
     developer_group = "easyjd-developers"
   }
@@ -54,8 +54,10 @@ locals {
   # AgentCore for the playground the playground and scans execute in. The domain is
   # registered at Cloudflare, so DNS lives there rather than in Route53.
   fireantslab = {
-    domain      = "fireantslab.com"
-    github_repo = "dabasajay/fireantslab.com"
+    domain = "fireantslab.com"
+    # Immutable subject: the ids are the account and the repository, and they
+    # survive a rename of either, which spelling out owner/repo would not.
+    github_subject_prefix = "repo:dabasajay@38384266/fireantslab.com@1372933894"
 
     # The one service outside ap-south-1: the AgentCore runtimes sit close to
     # the frontend and the database that serve them, rather than with the rest

@@ -31,13 +31,13 @@ module "resume_builder" {
     aws.us_east_1 = aws.us_east_1
   }
 
-  name_prefix       = local.name_prefix
-  domain            = local.resume_builder.domain
-  github_repo       = local.resume_builder.github_repo
-  zone_id           = module.shared.zone_ids[local.resume_builder.domain]
-  waf_web_acl_arn   = module.shared.waf_web_acl_arn
-  oidc_provider_arn = module.shared.github_oidc_provider_arn
-  developer_group   = local.resume_builder.developer_group
+  name_prefix           = local.name_prefix
+  domain                = local.resume_builder.domain
+  github_subject_prefix = local.resume_builder.github_subject_prefix
+  zone_id               = module.shared.zone_ids[local.resume_builder.domain]
+  waf_web_acl_arn       = module.shared.waf_web_acl_arn
+  oidc_provider_arn     = module.shared.github_oidc_provider_arn
+  developer_group       = local.resume_builder.developer_group
 
 
   tfstate_bucket_arn    = "arn:aws:s3:::${local.state_bucket}"
@@ -58,8 +58,8 @@ module "fireantslab" {
   name_prefix = local.name_prefix
   domain      = local.fireantslab.domain
 
-  github_repo       = local.fireantslab.github_repo
-  oidc_provider_arn = module.shared.github_oidc_provider_arn
+  github_subject_prefix = local.fireantslab.github_subject_prefix
+  oidc_provider_arn     = module.shared.github_oidc_provider_arn
 
   frontend_oidc_issuer      = local.fireantslab.frontend_oidc_issuer
   frontend_oidc_audience    = local.fireantslab.frontend_oidc_audience
