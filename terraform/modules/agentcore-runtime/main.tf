@@ -22,6 +22,14 @@ resource "aws_bedrockagentcore_agent_runtime" "this" {
     server_protocol = var.server_protocol
   }
 
+  # AgentCore drops every custom header that is not named here, query-param ones included.
+  dynamic "request_header_configuration" {
+    for_each = length(var.request_header_allowlist) > 0 ? [1] : []
+    content {
+      request_header_allowlist = var.request_header_allowlist
+    }
+  }
+
   # A playground session is someone poking at a skill, not a long-lived service.
   # Idle reclaims the instance when the browser stops talking; max_lifetime caps
   # a session that never stops, because the conversation lives in that instance.

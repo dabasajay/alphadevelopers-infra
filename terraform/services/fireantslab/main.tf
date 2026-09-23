@@ -120,4 +120,10 @@ module "playground_runtime" {
   description   = "Interactive playground sessions over websockets."
   role_arn      = aws_iam_role.runtime.arn
   container_uri = "${module.playground_image.repository_url}:latest"
+
+  # The grant a session redeems, and the origin it redeems it against.
+  request_header_allowlist = [
+    "X-Amzn-Bedrock-AgentCore-Runtime-Custom-Fireants-Grant",
+    "X-Amzn-Bedrock-AgentCore-Runtime-Custom-Fireants-Origin",
+  ]
 }
