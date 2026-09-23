@@ -16,3 +16,8 @@ output "scan_runtime_arn" {
 output "frontend_role_arn" {
   value = module.frontend.arn
 }
+
+output "deploy_role_arn" {
+  description = "Assumed by the deploy workflow to publish the image and roll the runtimes."
+  value       = module.deploy_role.arn
+}

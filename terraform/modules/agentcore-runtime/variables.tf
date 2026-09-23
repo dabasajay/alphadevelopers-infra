@@ -31,3 +31,15 @@ variable "server_protocol" {
   type    = string
   default = "HTTP"
 }
+
+variable "idle_session_timeout_seconds" {
+  description = "Reclaimed after this long with no message either way."
+  type        = number
+  default     = 300
+}
+
+variable "max_lifetime_seconds" {
+  description = "Hard cap on one session, however busy it stays."
+  type        = number
+  default     = 1800
+}

@@ -32,5 +32,6 @@ output "fireantslab" {
     playground_runtime_arn        = module.fireantslab.playground_runtime_arn
 
     frontend_role_arn = module.fireantslab.frontend_role_arn
+    deploy_role_arn   = module.fireantslab.deploy_role_arn
   }
 }

@@ -7,6 +7,15 @@ variable "domain" {
   type        = string
 }
 
+variable "github_repo" {
+  description = "owner/repo whose main branch may publish the playground image."
+  type        = string
+}
+
+variable "oidc_provider_arn" {
+  type = string
+}
+
 # The frontend is hosted outside this account and is not managed here. All this
 # needs is enough to trust its OIDC tokens; where it runs is somebody else's
 # concern until that moves into Terraform too.

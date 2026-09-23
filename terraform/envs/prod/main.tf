@@ -58,6 +58,9 @@ module "fireantslab" {
   name_prefix = local.name_prefix
   domain      = local.fireantslab.domain
 
+  github_repo       = local.fireantslab.github_repo
+  oidc_provider_arn = module.shared.github_oidc_provider_arn
+
   frontend_oidc_issuer      = local.fireantslab.frontend_oidc_issuer
   frontend_oidc_audience    = local.fireantslab.frontend_oidc_audience
   frontend_oidc_subject     = local.fireantslab.frontend_oidc_subject

@@ -22,6 +22,14 @@ resource "aws_bedrockagentcore_agent_runtime" "this" {
     server_protocol = var.server_protocol
   }
 
+  # A playground session is someone poking at a skill, not a long-lived service.
+  # Idle reclaims the instance when the browser stops talking; max_lifetime caps
+  # a session that never stops, because the conversation lives in that instance.
+  lifecycle_configuration = [{
+    idle_runtime_session_timeout = var.idle_session_timeout_seconds
+    max_lifetime                 = var.max_lifetime_seconds
+  }]
+
   # Neither the image nor the environment is owned here. CI publishes what the
   # tag points at, and the runtime's own configuration — its model key above all
   # — is set on the console, so an apply must not roll either back.

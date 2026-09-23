@@ -64,3 +64,49 @@ module "frontend" {
     aud = var.frontend_oidc_audience
   }
 }
+
+# What CI may do in this account: publish the playground image and roll the
+# runtimes onto it. AgentCore pins a digest when a version is created, so a
+# push alone changes nothing until the runtime is updated.
+data "aws_iam_policy_document" "deploy" {
+  statement {
+    sid       = "AuthenticateToRegistry"
+    actions   = ["ecr:GetAuthorizationToken"]
+    resources = ["*"]
+  }
+
+  statement {
+    sid = "PublishPlaygroundImage"
+    actions = [
+      "ecr:BatchCheckLayerAvailability",
+      "ecr:BatchGetImage",
+      "ecr:CompleteLayerUpload",
+      "ecr:GetDownloadUrlForLayer",
+      "ecr:InitiateLayerUpload",
+      "ecr:PutImage",
+      "ecr:UploadLayerPart",
+    ]
+    resources = [module.playground_image.arn]
+  }
+
+  # Update, not create: the runtimes exist in Terraform, and CI only moves them
+  # onto the image it just pushed.
+  statement {
+    sid     = "RollRuntimesOntoIt"
+    actions = ["bedrock-agentcore:GetAgentRuntime", "bedrock-agentcore:UpdateAgentRuntime"]
+    resources = [
+      module.scan_runtime.arn,
+      module.playground_runtime.arn,
+    ]
+  }
+}
+
+module "deploy_role" {
+  source = "../../modules/github-oidc-role"
+
+  name              = "${local.name}-deploy"
+  repository        = var.github_repo
+  oidc_provider_arn = var.oidc_provider_arn
+  policy_json       = data.aws_iam_policy_document.deploy.json
+  tags              = local.tags
+}

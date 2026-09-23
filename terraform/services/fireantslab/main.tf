@@ -12,7 +12,8 @@ module "playground_image" {
 
   # The deploy workflow pushes over a rolling :latest, which IMMUTABLE rejects.
   image_tag_mutability = "MUTABLE"
-  keep_last_images     = 10
+  # One image. A rollback redeploys from the tag CI builds, not from ECR history.
+  keep_last_images = 1
 }
 
 # What the playground itself runs as.

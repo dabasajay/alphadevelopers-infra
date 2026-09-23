@@ -54,7 +54,8 @@ locals {
   # AgentCore for the playground the playground and scans execute in. The domain is
   # registered at Cloudflare, so DNS lives there rather than in Route53.
   fireantslab = {
-    domain = "fireantslab.com"
+    domain      = "fireantslab.com"
+    github_repo = "dabasajay/fireantslab.com"
 
     # The one service outside ap-south-1: the AgentCore runtimes sit close to
     # the frontend and the database that serve them, rather than with the rest
