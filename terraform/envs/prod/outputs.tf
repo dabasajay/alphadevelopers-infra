@@ -32,7 +32,8 @@ output "fireantslab" {
     scan_runtime_arn                 = module.fireantslab.scan_runtime_arn
     playground_runtime_arn           = module.fireantslab.playground_runtime_arn
 
-    frontend_role_arn = module.fireantslab.frontend_role_arn
-    deploy_role_arn   = module.fireantslab.deploy_role_arn
+    frontend_role_arn    = module.fireantslab.frontend_role_arn
+    artifact_kms_key_arn = module.fireantslab.artifact_kms_key_arn
+    deploy_role_arn      = module.fireantslab.deploy_role_arn
   }
 }

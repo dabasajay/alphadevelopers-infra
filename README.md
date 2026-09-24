@@ -37,11 +37,12 @@ local, so there are no tfvars to supply.
 ## FireAnts
 
 The AWS half of the product: two AgentCore runtimes that execute untrusted skill
-content, each with its own ECR repository so each deploys on its own, plus the
-role its frontend assumes through OIDC so nothing has to hold an AWS key. Neither
-runtime holds a credential: the frontend pushes each session's config, and a
-model is reached through the frontend's LLM gateway. Supabase, Vercel and
-Cloudflare serve the same product and are **not managed here** for now.
+content, each with its own ECR repository so each deploys on its own, the KMS
+key that wraps its stored artifacts, and the role its frontend assumes through
+OIDC so nothing has to hold an AWS key. Neither runtime holds a credential: the
+frontend pushes each session's config, and a model is reached through the
+frontend's LLM gateway. Supabase, Vercel and Cloudflare serve the same product
+and are **not managed here** for now.
 
 Google Cloud is not managed here. The project holds the OAuth client for
 Google sign-in, and none of it is Terraformable: with no Workspace organization

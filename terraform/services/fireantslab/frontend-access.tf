@@ -46,6 +46,13 @@ data "aws_iam_policy_document" "frontend" {
       "${module.playground_runtime.arn}/*",
     ]
   }
+
+  # Wrapping an artifact's data key when it is stored, unwrapping it when read.
+  statement {
+    sid       = "WrapArtifactKeys"
+    actions   = ["kms:Encrypt", "kms:Decrypt"]
+    resources = [aws_kms_key.artifacts.arn]
+  }
 }
 
 module "frontend" {
