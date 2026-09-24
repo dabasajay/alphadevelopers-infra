@@ -36,10 +36,12 @@ local, so there are no tfvars to supply.
 
 ## FireAnts
 
-The AWS half of the product: one ECR repository and two AgentCore runtimes that
-execute untrusted skill content, plus the role its frontend assumes through
-OIDC so nothing has to hold an AWS key. Supabase, Vercel and Cloudflare serve
-the same product and are **not managed here** for now.
+The AWS half of the product: two AgentCore runtimes that execute untrusted skill
+content, each with its own ECR repository so each deploys on its own, plus the
+role its frontend assumes through OIDC so nothing has to hold an AWS key. Neither
+runtime holds a credential: the frontend pushes each session's config, and a
+model is reached through the frontend's LLM gateway. Supabase, Vercel and
+Cloudflare serve the same product and are **not managed here** for now.
 
 Google Cloud is not managed here. The project holds the OAuth client for
 Google sign-in, and none of it is Terraformable: with no Workspace organization
@@ -52,7 +54,9 @@ The one service outside ap-south-1: both runtimes sit in us-east-1, and
 module means adding it to that list in the same change.
 
 A runtime cannot be created against an empty ECR repository, the same way a
-container-image Lambda cannot, so the first apply goes in two steps:
+container-image Lambda cannot, so the first apply goes in two steps. Shown for
+the playground; the skill scanner is the same with `skill_scanner_image` and
+its own repository:
 
 ```sh
 TF="tofu -chdir=terraform/envs/prod"
@@ -65,7 +69,7 @@ aws ecr get-login-password --region us-east-1 \
   | docker login --username AWS --password-stdin $ACCOUNT.dkr.ecr.us-east-1.amazonaws.com
 
 # AgentCore runs arm64 and rejects anything else. The real image comes from the
-# app repo's `bun run playground:build`; CI owns the tag from the first deploy on.
+# app repo's harness/playground; CI owns the tag from the first deploy on.
 docker pull --platform linux/arm64 public.ecr.aws/docker/library/alpine:3.20
 docker tag public.ecr.aws/docker/library/alpine:3.20 $REPO:latest
 docker push $REPO:latest
