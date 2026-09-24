@@ -43,8 +43,3 @@ variable "max_lifetime_seconds" {
   type        = number
   default     = 1800
 }
-
-variable "request_header_allowlist" {
-  type    = list(string)
-  default = []
-}

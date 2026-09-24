@@ -1,6 +1,11 @@
-output "ecr_repository_url" {
-  description = "Where the deploy workflow pushes the playground image."
+output "playground_ecr_repository_url" {
+  description = "Where the playground's deploy workflow pushes its image."
   value       = module.playground_image.repository_url
+}
+
+output "skill_scanner_ecr_repository_url" {
+  description = "Where the skill scanner's deploy workflow pushes its image."
+  value       = module.skill_scanner_image.repository_url
 }
 
 output "playground_runtime_arn" {
@@ -18,6 +23,6 @@ output "frontend_role_arn" {
 }
 
 output "deploy_role_arn" {
-  description = "Assumed by the deploy workflow to publish the image and roll the runtimes."
+  description = "Assumed by the runtime deploy workflows to publish images and roll runtimes."
   value       = module.deploy_role.arn
 }

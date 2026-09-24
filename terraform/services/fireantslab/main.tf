@@ -16,12 +16,23 @@ module "playground_image" {
   keep_last_images = 1
 }
 
-# What the playground itself runs as.
+# Its own repository, so the scanner builds and deploys independently of the playground.
+module "skill_scanner_image" {
+  source = "../../modules/ecr-repo"
+
+  name = "${local.name}-skill-scanner"
+  tags = local.tags
+
+  image_tag_mutability = "MUTABLE"
+  keep_last_images     = 1
+}
+
+# What both runtimes run as.
 #
 # Code inside a microVM can read this role's credentials, so it carries nothing
 # that would matter if it leaked: no registry, no publication, no database, no
-# access to another session. Pulling its own image, writing its own logs and
-# calling a model is the whole of it.
+# model, no access to another session. Pulling their images and writing their
+# logs is the whole of it; a model is reached through the app's LLM gateway.
 data "aws_iam_policy_document" "runtime_assume" {
   statement {
     actions = ["sts:AssumeRole"]
@@ -59,9 +70,9 @@ data "aws_iam_policy_document" "runtime" {
   }
 
   statement {
-    sid       = "PullOnlyItsOwnImage"
+    sid       = "PullOnlyTheirOwnImages"
     actions   = ["ecr:BatchGetImage", "ecr:GetDownloadUrlForLayer"]
-    resources = [module.playground_image.arn]
+    resources = [module.playground_image.arn, module.skill_scanner_image.arn]
   }
 
   statement {
@@ -74,12 +85,6 @@ data "aws_iam_policy_document" "runtime" {
     sid       = "FindItsLogGroup"
     actions   = ["logs:DescribeLogGroups"]
     resources = ["arn:aws:logs:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:log-group:*"]
-  }
-
-  statement {
-    sid       = "CallAModel"
-    actions   = ["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"]
-    resources = ["*"]
   }
 }
 
@@ -110,7 +115,7 @@ module "scan_runtime" {
   name          = "fireants_scan"
   description   = "Detonation scans. Its output is evidence, never a verdict."
   role_arn      = aws_iam_role.runtime.arn
-  container_uri = "${module.playground_image.repository_url}:latest"
+  container_uri = "${module.skill_scanner_image.repository_url}:latest"
 }
 
 module "playground_runtime" {
@@ -120,10 +125,4 @@ module "playground_runtime" {
   description   = "Interactive playground sessions over websockets."
   role_arn      = aws_iam_role.runtime.arn
   container_uri = "${module.playground_image.repository_url}:latest"
-
-  # The grant a session redeems, and the origin it redeems it against.
-  request_header_allowlist = [
-    "X-Amzn-Bedrock-AgentCore-Runtime-Custom-Fireants-Grant",
-    "X-Amzn-Bedrock-AgentCore-Runtime-Custom-Fireants-Origin",
-  ]
 }

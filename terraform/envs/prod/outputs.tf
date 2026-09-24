@@ -27,9 +27,10 @@ output "resume_builder" {
 
 output "fireantslab" {
   value = {
-    playground_ecr_repository_url = module.fireantslab.ecr_repository_url
-    scan_runtime_arn              = module.fireantslab.scan_runtime_arn
-    playground_runtime_arn        = module.fireantslab.playground_runtime_arn
+    playground_ecr_repository_url    = module.fireantslab.playground_ecr_repository_url
+    skill_scanner_ecr_repository_url = module.fireantslab.skill_scanner_ecr_repository_url
+    scan_runtime_arn                 = module.fireantslab.scan_runtime_arn
+    playground_runtime_arn           = module.fireantslab.playground_runtime_arn
 
     frontend_role_arn = module.fireantslab.frontend_role_arn
     deploy_role_arn   = module.fireantslab.deploy_role_arn

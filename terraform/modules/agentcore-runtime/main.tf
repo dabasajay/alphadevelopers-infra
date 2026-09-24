@@ -22,14 +22,6 @@ resource "aws_bedrockagentcore_agent_runtime" "this" {
     server_protocol = var.server_protocol
   }
 
-  # AgentCore drops every custom header that is not named here, query-param ones included.
-  dynamic "request_header_configuration" {
-    for_each = length(var.request_header_allowlist) > 0 ? [1] : []
-    content {
-      request_header_allowlist = var.request_header_allowlist
-    }
-  }
-
   # A playground session is someone poking at a skill, not a long-lived service.
   # Idle reclaims the instance when the browser stops talking; max_lifetime caps
   # a session that never stops, because the conversation lives in that instance.
@@ -38,10 +30,9 @@ resource "aws_bedrockagentcore_agent_runtime" "this" {
     max_lifetime                 = var.max_lifetime_seconds
   }]
 
-  # Neither the image nor the environment is owned here. CI publishes what the
-  # tag points at, and the runtime's own configuration — its model key above all
-  # — is set on the console, so an apply must not roll either back.
+  # The environment is owned here, and empty: a runtime holds no configuration of
+  # its own, so an apply clears anything set on it.
   lifecycle {
-    ignore_changes = [agent_runtime_artifact, environment_variables]
+    ignore_changes = [agent_runtime_artifact]
   }
 }

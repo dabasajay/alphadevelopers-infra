@@ -18,9 +18,9 @@ resource "aws_iam_openid_connect_provider" "frontend" {
 }
 
 data "aws_iam_policy_document" "frontend" {
-  # Presigning proves we issued the URL, never whose conversation it is. The
-  # runtime checks an admission grant against stored session state before it
-  # admits anyone, so this grants a connection attempt and nothing more.
+  # The frontend signs a URL only for a session whose owner it has authorized,
+  # and the session is inside the signature. This allows connecting and nothing
+  # else.
   statement {
     sid     = "PresignPlaygroundWebsocket"
     actions = ["bedrock-agentcore:InvokeAgentRuntimeWithWebSocketStream"]
@@ -30,8 +30,8 @@ data "aws_iam_policy_document" "frontend" {
     ]
   }
 
-  # Dispatching a scan and ending a session. Both runtimes, because a scan is
-  # invoked here and a playground session is stopped here.
+  # Pushing a session's config, dispatching a scan and ending a session. Both
+  # runtimes, because each is invoked from here and a session is stopped here.
   statement {
     sid = "ControlRuntimeSessions"
     actions = [
@@ -65,9 +65,9 @@ module "frontend" {
   }
 }
 
-# What CI may do in this account: publish the playground image and roll the
-# runtimes onto it. AgentCore pins a digest when a version is created, so a
-# push alone changes nothing until the runtime is updated.
+# What CI may do in this account: publish each runtime's image and roll that
+# runtime onto it. AgentCore pins a digest when a version is created, so a push
+# alone changes nothing until the runtime is updated.
 data "aws_iam_policy_document" "deploy" {
   statement {
     sid       = "AuthenticateToRegistry"
@@ -76,7 +76,7 @@ data "aws_iam_policy_document" "deploy" {
   }
 
   statement {
-    sid = "PublishPlaygroundImage"
+    sid = "PublishRuntimeImages"
     actions = [
       "ecr:BatchCheckLayerAvailability",
       "ecr:BatchGetImage",
@@ -86,7 +86,7 @@ data "aws_iam_policy_document" "deploy" {
       "ecr:PutImage",
       "ecr:UploadLayerPart",
     ]
-    resources = [module.playground_image.arn]
+    resources = [module.playground_image.arn, module.skill_scanner_image.arn]
   }
 
   # A runtime id is generated, so CI resolves it from the name it knows. Listing
