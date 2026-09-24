@@ -22,6 +22,11 @@ output "frontend_role_arn" {
   value = module.frontend.arn
 }
 
+output "artifact_kms_key_arn" {
+  description = "The frontend's ARTIFACT_KMS_KEY_ID."
+  value       = aws_kms_key.artifacts.arn
+}
+
 output "deploy_role_arn" {
   description = "Assumed by the runtime deploy workflows to publish images and roll runtimes."
   value       = module.deploy_role.arn
